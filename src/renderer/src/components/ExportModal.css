@@ -1,0 +1,180 @@
+.exportmodal-style-1 {
+  position: fixed;
+  top: 0px;
+  left: 0px;
+  right: 0px;
+  bottom: 0px;
+  background-color: rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.exportmodal-style-2 {
+  background-color: var(--color-bg-darker);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  width: 500px;
+  max-width: 90%;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  position: relative;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-bg-dark);
+  cursor: grab;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+.modal-header:active {
+  cursor: grabbing;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--color-text-main);
+}
+
+.exportmodal-style-3 {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.exportmodal-style-4 {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  gap: 24px;
+}
+
+.exportmodal-style-5 {
+  text-align: center;
+}
+
+.exportmodal-style-6 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.exportmodal-style-7 {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.exportmodal-style-8 {
+  width: 100%;
+  height: 8px;
+  background-color: var(--color-bg-darkest);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.exportmodal-style-9 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.exportmodal-style-10 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.exportmodal-style-11 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.exportmodal-style-12 {
+  text-align: center;
+}
+
+.exportmodal-style-13 {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+
+.exportmodal-style-14 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.exportmodal-style-15 {
+  width: 100%;
+}
+
+.exportmodal-style-16 {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: rgba(245, 158, 11, 0.1);
+  border-left: 2px solid #f59e0b;
+}
+
+.exportmodal-style-17 {
+  background-color: var(--color-accent);
+  color: var(--color-bg-darkest);
+  border: none;
+  border-radius: 6px;
+  padding: 12px;
+  width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+}
+.aspect-ratio-box {
+  border: 2px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  background-color: var(--color-bg-darkest);
+  transition: all 0.2s;
+}
+.aspect-ratio-box.active {
+  border-color: var(--color-accent);
+  background-color: rgba(56, 189, 248, 0.05);
+}
+.aspect-ratio-icon {
+  color: var(--color-text-secondary);
+}
+.aspect-ratio-box.active .aspect-ratio-icon {
+  color: var(--color-accent);
+}
+.aspect-ratio-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.aspect-ratio-box.active .aspect-ratio-name {
+  color: var(--color-text-main);
+}
+.progress-bar-fill {
+  height: 100%;
+  background-color: var(--color-accent);
+  transition: width 0.2s ease;
+}

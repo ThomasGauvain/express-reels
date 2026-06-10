@@ -1,0 +1,11 @@
+{
+  "version": 1.1,
+  "properties": [
+    {
+      "name": "-webkit-app-region",
+      "description": "Electron (Chromium) property for native window drag regions. Values: 'drag' | 'no-drag'. This is an Electron-only API — cross-browser warnings are not applicable.",
+      "browsers": ["C", "E", "FF", "S", "IE", "O"],
+      "values": [{ "name": "drag" }, { "name": "no-drag" }]
+    }
+  ]
+}

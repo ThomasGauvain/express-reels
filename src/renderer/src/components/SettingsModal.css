@@ -1,0 +1,506 @@
+.settingsmodal-style-1 {
+  position: fixed;
+  top: 0px;
+  left: 0px;
+  right: 0px;
+  bottom: 0px;
+  background-color: rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.settingsmodal-style-2 {
+  background-color: var(--color-bg-darker);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  width: 500px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.settingsmodal-style-3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-bg-dark);
+}
+
+.settingsmodal-style-4 {
+  margin: 0px;
+  font-size: 18px;
+  color: var(--color-text-main);
+}
+
+.settingsmodal-style-5 {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.settingsmodal-style-6 {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-bg-darkest);
+}
+
+.settingsmodal-style-7 {
+  flex: 1;
+  padding: 12px 0;
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.settingsmodal-style-8 {
+  flex: 1;
+  padding: 12px 0;
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.settingsmodal-style-9 {
+  padding: 24px;
+}
+
+.settingsmodal-style-10 {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settingsmodal-style-11 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settingsmodal-style-12 {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.settingsmodal-style-13 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-14 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settingsmodal-style-15 {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.settingsmodal-style-16 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-17 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settingsmodal-style-18 {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.settingsmodal-style-19 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-20 {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 0;
+  background-color: var(--color-bg-light);
+  color: var(--color-text-main);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settingsmodal-style-21 {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settingsmodal-style-22 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.settingsmodal-style-23 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settingsmodal-style-24 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.settingsmodal-style-25 {
+  font-size: 12px;
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.settingsmodal-style-26 {
+  display: flex;
+  gap: 8px;
+}
+
+.settingsmodal-style-27 {
+  font-size: 10px;
+  background-color: var(--color-bg-dark);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-main);
+  padding: 2px 6px;
+}
+
+.settingsmodal-style-28 {
+  font-size: 10px;
+  background-color: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  color: var(--color-text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settingsmodal-style-29 {
+  color: var(--color-accent);
+}
+
+.settingsmodal-style-30 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-31 {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.settingsmodal-style-32 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.settingsmodal-style-33 {
+  font-size: 12px;
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.settingsmodal-style-34 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-35 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.settingsmodal-style-36 {
+  font-size: 12px;
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.settingsmodal-style-37 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-38 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.settingsmodal-style-39 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.settingsmodal-style-40 {
+  font-size: 12px;
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.settingsmodal-style-41 {
+  font-size: 10px;
+  background-color: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  color: var(--color-text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settingsmodal-style-42 {
+  color: var(--color-accent);
+}
+
+.settingsmodal-style-43 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-44 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.settingsmodal-style-45 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.settingsmodal-style-46 {
+  font-size: 12px;
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.settingsmodal-style-47 {
+  font-size: 10px;
+  background-color: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  color: var(--color-text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settingsmodal-style-48 {
+  color: var(--color-accent);
+}
+
+.settingsmodal-style-49 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-50 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.settingsmodal-style-51 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.settingsmodal-style-52 {
+  font-size: 12px;
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.settingsmodal-style-53 {
+  font-size: 10px;
+  background-color: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  color: var(--color-text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settingsmodal-style-54 {
+  color: var(--color-accent);
+}
+
+.settingsmodal-style-55 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-56 {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.settingsmodal-style-57 {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.settingsmodal-style-58 {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.settingsmodal-style-59 {
+  font-size: 12px;
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.settingsmodal-style-60 {
+  font-size: 10px;
+  background-color: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  color: var(--color-text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settingsmodal-style-61 {
+  color: var(--color-accent);
+}
+
+.settingsmodal-style-62 {
+  width: 100%;
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: white;
+  box-sizing: border-box;
+}
+
+.settingsmodal-style-63 {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 0;
+  background-color: var(--color-accent);
+  color: var(--color-bg-darkest);
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-btn {
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent;
+}
+.tab-btn.active {
+  color: var(--color-accent);
+  border-bottom: 2px solid var(--color-accent);
+}

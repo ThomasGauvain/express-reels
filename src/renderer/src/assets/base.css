@@ -1,0 +1,66 @@
+:root {
+  /* Dark Grey & Black Palette */
+  --color-bg-darkest: #0a0a0a; /* Titlebar, Tool Bar */
+  --color-bg-darker: #0f0f0f; /* Effects Palette, Timeline */
+  --color-bg-dark: #111111; /* Media Library, Live Preview */
+  --color-bg-light: #1a1a1a;
+  --color-bg-lighter: #222222;
+  --color-bg-lightest: #333333;
+
+  /* Amber Accent */
+  --color-accent: #f59e0b;
+  --color-accent-hover: #d97706;
+
+  /* Text Colors */
+  --color-text-main: #e5e5e5;
+  --color-text-secondary: #999999;
+  --color-text-muted: #666666;
+
+  /* Borders */
+  --color-border: #2a2a2a;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--color-text-main);
+  background: var(--color-bg-darkest);
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  overflow: hidden; /* App should not have body scrollbars */
+  -webkit-user-select: none;
+  user-select: none; /* Desktop app feel */
+  -webkit-font-smoothing: antialiased;
+}
+
+ul {
+  list-style: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  outline: none;
+}

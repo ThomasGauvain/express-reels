@@ -1,0 +1,414 @@
+.timeline-style-1 {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  -webkit-user-select: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+.timeline-style-2 {
+  height: 24px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  position: relative;
+  overflow: hidden;
+  cursor: text;
+}
+
+/* Fixed 80px spacer in the ruler — never scrolls */
+.timeline-style-3 {
+  width: 80px;
+  border-right: 1px solid var(--color-border);
+  flex-shrink: 0;
+  background-color: var(--color-bg-dark);
+  z-index: 60;
+  position: relative;
+}
+
+/* Scrollable tick zone in the ruler */
+.timeline-ruler-scroll {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.timeline-style-4 {
+  flex: 1;
+  position: relative;
+  height: 100%;
+}
+
+.timeline-style-5 {
+  position: absolute;
+  bottom: 0px;
+  height: 10px;
+  border-left: 1px solid var(--color-text-muted);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  padding-left: 4px;
+}
+
+.timeline-style-6 {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-style-7 {
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-style-8 {
+  display: flex;
+  height: 60px;
+  border-bottom: 1px solid var(--color-bg-light);
+  position: sticky;
+  left: 0px;
+}
+
+.timeline-style-9 {
+  width: 80px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  border-right: 1px solid var(--color-border);
+  background-color: var(--color-bg-dark);
+  z-index: 60;
+  position: sticky;
+  left: 0px;
+  cursor: context-menu;
+}
+
+.timeline-style-10 {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.timeline-style-11 {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.timeline-style-12 {
+  height: 100%;
+  opacity: 0.5;
+  object-fit: cover;
+}
+
+.timeline-style-13 {
+  position: absolute;
+  top: 0px;
+  bottom: 0px;
+  left: 0px;
+  right: 0px;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.timeline-style-14 {
+  position: absolute;
+  top: 0px;
+  height: 100%;
+}
+
+.timeline-style-15 {
+  position: absolute;
+  left: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.timeline-style-16 {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.timeline-style-17 {
+  position: absolute;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  cursor: pointer;
+  background-color: white;
+  z-index: 20;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  margin-left: 2px;
+}
+
+.timeline-style-18 {
+  position: absolute;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  cursor: pointer;
+  background-color: white;
+  z-index: 20;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  margin-left: -14px;
+}
+
+.timeline-style-19 {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  bottom: 0px;
+  width: 8px;
+  max-width: 50%;
+  cursor: ew-resize;
+  background-color: rgba(255, 255, 255, 0.1);
+  z-index: 20;
+}
+
+.timeline-style-20 {
+  position: absolute;
+  right: 0px;
+  top: 0px;
+  bottom: 0px;
+  width: 8px;
+  max-width: 50%;
+  cursor: ew-resize;
+  background-color: rgba(255, 255, 255, 0.1);
+  z-index: 20;
+}
+
+.timeline-style-21 {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  z-index: 20;
+}
+
+.timeline-style-22 {
+  position: absolute;
+  top: 0px;
+  bottom: 0px;
+  width: 1px;
+  background-color: red;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.timeline-style-23 {
+  position: absolute;
+  top: 0px;
+  bottom: 0px;
+  background-color: rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.8);
+  pointer-events: none;
+  z-index: 40;
+}
+
+.timeline-style-24 {
+  position: absolute;
+  top: 0px;
+  bottom: 0px;
+  width: 2px;
+  background-color: red;
+  z-index: 35;
+  pointer-events: none;
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+}
+
+.timeline-style-25 {
+  position: absolute;
+  top: 60px;
+  left: 6px;
+  color: red;
+  font-size: 10px;
+  font-weight: bold;
+  text-shadow: 0 1px 2px black;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+}
+
+.timeline-style-26 {
+  position: fixed;
+  top: 0px;
+  left: 0px;
+  right: 0px;
+  bottom: 0px;
+  z-index: 9998;
+}
+
+.timeline-style-27 {
+  position: fixed;
+  background-color: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  min-width: 160px;
+}
+
+.timeline-style-28 {
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-main);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.timeline-style-29 {
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: #f87171;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.timeline-style-30 {
+  position: absolute;
+  top: 0px;
+  bottom: 0px;
+  width: 2px;
+  background-color: var(--color-accent);
+  z-index: 50;
+  cursor: ew-resize;
+}
+
+.timeline-style-31 {
+  position: absolute;
+  top: 0px;
+  left: -4px;
+  width: 10px;
+  height: 10px;
+  background-color: var(--color-accent);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.timeline-style-32 {
+  position: absolute;
+  top: 0px;
+  bottom: 0px;
+  width: 4px;
+  background-color: var(--color-accent);
+  pointer-events: auto;
+  cursor: ew-resize;
+  z-index: 50;
+  margin-left: -1px;
+}
+
+.timeline-style-33 {
+  position: absolute;
+  top: 0px;
+  left: 0px;
+  overflow: visible;
+  z-index: 10;
+}
+
+.timeline-style-34 {
+  pointer-events: none;
+}
+
+.timeline-style-35 {
+  cursor: pointer;
+}
+
+.cursor-pointer {
+  cursor: pointer !important;
+}
+
+.cursor-scissors {
+  cursor:
+    url('data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"%3E%3Ctext x="16" y="12" font-size="16" text-anchor="middle" dominant-baseline="middle"%3E✂️%3C/text%3E%3Ctext x="16" y="24" font-size="16" text-anchor="middle" dominant-baseline="middle"%3E↔%3C/text%3E%3C/svg%3E')
+      16 16,
+    ew-resize !important;
+}
+
+.cursor-bunny {
+  cursor:
+    url('data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"%3E%3Ctext x="16" y="18" font-size="20" text-anchor="middle" dominant-baseline="middle"%3E🐇%3C/text%3E%3C/svg%3E')
+      16 16,
+    ew-resize !important;
+}
+
+.cursor-turtle {
+  cursor:
+    url('data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"%3E%3Ctext x="16" y="18" font-size="20" text-anchor="middle" dominant-baseline="middle"%3E🐢%3C/text%3E%3C/svg%3E')
+      16 16,
+    ew-resize !important;
+}
+
+.cursor-speed {
+  cursor:
+    url('data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"%3E%3Ctext x="16" y="18" font-size="20" text-anchor="middle" dominant-baseline="middle"%3E⏱️%3C/text%3E%3C/svg%3E')
+      16 16,
+    ew-resize !important;
+}
+
+.timeline-style-36 {
+  position: relative;
+}
+
+.timeline-style-37 {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-color: rgba(59, 130, 246, 0.2);
+  border-top: 2px dashed rgba(59, 130, 246, 0.8);
+  border-bottom: 2px dashed rgba(59, 130, 246, 0.8);
+  z-index: 35;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.timeline-style-38 {
+  height: 80px;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.timeline-style-39 {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  z-index: 40;
+  pointer-events: auto;
+  cursor: col-resize;
+  margin-left: -1px;
+}
+
+.range-selected-track {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-top: 1px solid rgba(59, 130, 246, 0.3);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.3);
+}
