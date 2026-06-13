@@ -1,4 +1,5 @@
 import React, { useRef, useCallback, useLayoutEffect, useState } from 'react'
+import { Music, Radio, Wind, Guitar } from 'lucide-react'
 import type { Instrument } from '../store/soundStudioStore'
 import { useSoundStudioStore } from '../store/soundStudioStore'
 import { audioEngine } from './audioEngine'
@@ -103,8 +104,18 @@ export function PianoKeyboard({ selectedInstrument }: PianoKeyboardProps): React
     .filter(Boolean)
     .join('\n')
 
+  const renderGraphic = (): React.ReactElement => {
+    const color = 'var(--color-text-muted)'
+    if (!selectedInstrument) return <Music size={48} color={color} />
+    if (selectedInstrument.category === 'synth') return <Radio size={48} color={color} />
+    if (selectedInstrument.category === 'strings') return <Guitar size={48} color={color} />
+    if (selectedInstrument.category === 'wind') return <Wind size={48} color={color} />
+    return <Music size={48} color={color} />
+  }
+
   return (
     <div className="ss-piano-wrapper">
+      <div className="ss-piano-graphic-container">{renderGraphic()}</div>
       <div className="ss-piano-controls">
         <span className="ss-piano-controls-label">Octave</span>
         <button className="ss-btn" onClick={() => setOctaveView((o) => Math.max(1, o - 1))}>

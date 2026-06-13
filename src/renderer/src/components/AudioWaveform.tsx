@@ -60,7 +60,7 @@ export const AudioWaveform = ({
         waveformCache.set(src, newPeaks)
         setPeaks(newPeaks)
       } catch (err) {
-        console.error('Failed to load waveform for', src, err)
+        console.warn('Failed to load waveform for', src, err)
       }
     }
 

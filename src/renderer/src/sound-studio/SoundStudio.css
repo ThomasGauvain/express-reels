@@ -337,6 +337,9 @@ body,
   -webkit-user-select: none;
   user-select: none;
 }
+.ss-clip-effects-delete-btn {
+  margin-right: 8px;
+}
 .ss-instr-item:hover {
   background: var(--ss-surface-2);
   color: var(--ss-text);
@@ -728,6 +731,13 @@ body,
   overflow: hidden;
 }
 
+.ss-piano-graphic-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
 .ss-piano-controls {
   display: flex;
   align-items: center;
@@ -941,7 +951,7 @@ body,
 /* ── Studio Timeline ─────────────────────────────────────────────────────────── */
 
 .ss-timeline-container {
-  height: var(--timeline-h);
+  height: 100%;
   min-height: 160px;
   max-height: 60vh;
   background: var(--ss-surface);

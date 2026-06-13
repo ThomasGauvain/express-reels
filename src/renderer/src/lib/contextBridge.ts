@@ -2,24 +2,46 @@ import { useProjectStore } from '../store/projectStore'
 
 export async function fileToBase64(filePath: string): Promise<{ mimeType: string; data: string }> {
   try {
-    const fileUrl = `file:///${filePath.replace(/\\/g, '/')}`
-    const response = await fetch(fileUrl)
-    const blob = await response.blob()
+    const ext = filePath.split('.').pop()?.toLowerCase() || ''
+    let mimeType = 'application/octet-stream'
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+      mimeType = `image/${ext === 'jpg' ? 'jpeg' : ext}`
+    } else if (['mp4', 'mov', 'webm'].includes(ext)) {
+      mimeType = `video/${ext === 'mov' ? 'quicktime' : ext}`
+    } else if (['mp3', 'wav', 'ogg'].includes(ext)) {
+      mimeType = `audio/${ext}`
+    }
 
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const result = reader.result as string
-        const match = result.match(/^data:(.*);base64,(.*)$/)
-        if (match) {
-          resolve({ mimeType: match[1], data: match[2] })
-        } else {
-          reject(new Error('Failed to parse base64 data string'))
+    if (
+      filePath.startsWith('http://') ||
+      filePath.startsWith('https://') ||
+      filePath.startsWith('blob:')
+    ) {
+      const response = await fetch(filePath)
+      const blob = await response.blob()
+
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          const result = reader.result as string
+          const match = result.match(/^data:(.*);base64,(.*)$/)
+          if (match) {
+            resolve({ mimeType: match[1], data: match[2] })
+          } else {
+            reject(new Error('Failed to parse base64 data string'))
+          }
         }
-      }
-      reader.onerror = reject
-      reader.readAsDataURL(blob)
-    })
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+    }
+
+    const base64Data = await window.electron.ipcRenderer.invoke('system:read-file-base64', filePath)
+    if (!base64Data) {
+      throw new Error('File not found or cannot be read')
+    }
+
+    return { mimeType, data: base64Data }
   } catch (error) {
     console.error('Context Bridge File Read Error:', error)
     throw error
@@ -35,6 +57,8 @@ export function getTimelineContextSummary(): string {
   let summary = `Current Playhead Position: ${state.playhead.toFixed(2)}s\n`
   summary += `Total Clips on Timeline: ${state.clips.length}\n\n`
 
+  const requiredAttributions = new Set<string>()
+
   if (state.clips.length > 0) {
     summary += `Timeline Layout:\n`
     state.clips.forEach((clip) => {
@@ -46,9 +70,32 @@ export function getTimelineContextSummary(): string {
       if (clip.effects && clip.effects.length > 0) {
         summary += `  - Has ${clip.effects.length} visual effects.\n`
       }
+      if (media && media.attribution) {
+        requiredAttributions.add(media.attribution)
+      }
     })
   } else {
     summary += 'The timeline is currently empty.\n'
+  }
+
+  if (requiredAttributions.size > 0) {
+    summary += `\nRequired Attributions:\n`
+    requiredAttributions.forEach((attr) => {
+      summary += `- ${attr}\n`
+    })
+  }
+
+  if (state.creatorProfile && state.creatorProfile.name) {
+    summary += `\nCreator Information (Include in Caption):\n`
+    summary += `- Name: ${state.creatorProfile.name}\n`
+    const { handles } = state.creatorProfile
+    const activeHandles = Object.entries(handles).filter((entry) => entry[1].trim() !== '')
+    if (activeHandles.length > 0) {
+      summary += `- Handles:\n`
+      activeHandles.forEach(([platform, handle]) => {
+        summary += `  - ${platform}: ${handle}\n`
+      })
+    }
   }
 
   return summary

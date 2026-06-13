@@ -7,6 +7,7 @@ export function ClipEffectsPanel(): React.ReactElement | null {
   const clips = useSoundStudioStore((s) => s.clips)
   const updateClip = useSoundStudioStore((s) => s.updateClip)
   const setSelectedClipId = useSoundStudioStore((s) => s.setSelectedClipId)
+  const removeClip = useSoundStudioStore((s) => s.removeClip)
 
   const clip = clips.find((c) => c.id === selectedClipId)
   if (!clip) return null
@@ -59,6 +60,14 @@ export function ClipEffectsPanel(): React.ReactElement | null {
       <div className="ss-clip-effects-header">
         <Sliders size={12} />
         <span>Clip Inspector: {clip.pitch || 'Beat'}</span>
+        <button
+          className="ss-clip-effects-close ss-btn danger ss-clip-effects-delete-btn"
+          onClick={() => removeClip(clip.id)}
+          title="Delete Clip"
+          aria-label="Delete Clip"
+        >
+          <X size={12} /> Delete
+        </button>
         <button
           className="ss-clip-effects-close"
           onClick={() => setSelectedClipId(null)}

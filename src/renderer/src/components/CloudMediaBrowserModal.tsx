@@ -6,6 +6,7 @@ import { useProjectStore } from '../store/projectStore'
 export function CloudMediaBrowserModal({ onClose }: { onClose: () => void }): React.ReactElement {
   const [activeTab, setActiveTab] = useState<'video' | 'stickers'>('video')
   const [search, setSearch] = useState('nature')
+  const [orientation, setOrientation] = useState('all')
 
   const [results, setResults] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -25,11 +26,23 @@ export function CloudMediaBrowserModal({ onClose }: { onClose: () => void }): Re
           return
         }
         const res = await fetch(
-          `https://pixabay.com/api/videos/?key=${aiKeys.pixabay}&q=${encodeURIComponent(search)}&per_page=20`
+          `https://pixabay.com/api/videos/?key=${aiKeys.pixabay}&q=${encodeURIComponent(search)}&per_page=100`
         )
         if (!res.ok) throw new Error('Pixabay API error: ' + res.statusText)
         const data = await res.json()
-        setResults(data.hits)
+        let hits = data.hits || []
+        if (orientation !== 'all') {
+          hits = hits.filter((hit: any) => {
+            const w = hit.videos?.tiny?.width || 1
+            const h = hit.videos?.tiny?.height || 1
+            const ratio = w / h
+            if (orientation === 'landscape') return ratio > 1.1
+            if (orientation === 'portrait') return ratio < 0.9
+            if (orientation === 'square') return ratio >= 0.9 && ratio <= 1.1
+            return true
+          })
+        }
+        setResults(hits.slice(0, 30))
       } else {
         if (!aiKeys?.giphy) {
           setError('Please add a Giphy API Key in Settings first.')
@@ -37,11 +50,23 @@ export function CloudMediaBrowserModal({ onClose }: { onClose: () => void }): Re
           return
         }
         const res = await fetch(
-          `https://api.giphy.com/v1/stickers/search?api_key=${aiKeys.giphy}&q=${encodeURIComponent(search)}&limit=20`
+          `https://api.giphy.com/v1/stickers/search?api_key=${aiKeys.giphy}&q=${encodeURIComponent(search)}&limit=100`
         )
         if (!res.ok) throw new Error('Giphy API error: ' + res.statusText)
         const data = await res.json()
-        setResults(data.data)
+        let hits = data.data || []
+        if (orientation !== 'all') {
+          hits = hits.filter((hit: any) => {
+            const w = parseInt(hit.images?.original?.width || '1', 10)
+            const h = parseInt(hit.images?.original?.height || '1', 10)
+            const ratio = w / h
+            if (orientation === 'landscape') return ratio > 1.1
+            if (orientation === 'portrait') return ratio < 0.9
+            if (orientation === 'square') return ratio >= 0.9 && ratio <= 1.1
+            return true
+          })
+        }
+        setResults(hits.slice(0, 30))
       }
     } catch (err: any) {
       setError(err.message)
@@ -131,6 +156,18 @@ export function CloudMediaBrowserModal({ onClose }: { onClose: () => void }): Re
               onChange={(e) => setSearch(e.target.value)}
               className="cloudmediabrowsermodal-style-13"
             />
+            <select
+              title="Orientation"
+              aria-label="Orientation Filter"
+              value={orientation}
+              onChange={(e) => setOrientation(e.target.value)}
+              className="cloudmediabrowsermodal-filter-select"
+            >
+              <option value="all">Any Orientation</option>
+              <option value="landscape">Landscape</option>
+              <option value="portrait">Portrait</option>
+              <option value="square">Square</option>
+            </select>
             <button type="submit" disabled={loading} className="cloudmediabrowsermodal-style-14">
               Search
             </button>

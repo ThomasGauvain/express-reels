@@ -10,6 +10,9 @@ declare global {
       saveThumbnail: (id: string, base64: string) => Promise<string | null>
       readSettings: (key: string) => Promise<string | null>
       writeSettings: (key: string, data: string) => Promise<void>
+      getGpuInfo: () => Promise<{
+        gpuDevice?: { vendorString: string; deviceString: string; active: boolean }[]
+      } | null>
     }
   }
 }

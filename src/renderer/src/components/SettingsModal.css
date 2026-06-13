@@ -17,11 +17,31 @@
   background-color: var(--color-bg-darker);
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  width: 500px;
+  width: 750px;
+  max-height: 80vh;
   overflow: hidden;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
+}
+
+.settings-split-container {
+  display: flex;
+  flex-direction: row;
+  height: 500px; /* fixed height for internal scrolling */
+}
+
+.settings-sidebar {
+  width: 200px;
+  background-color: var(--color-bg-darkest);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
 }
 
 .settingsmodal-style-3 {
@@ -49,33 +69,30 @@
 
 .settingsmodal-style-6 {
   display: flex;
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-bg-darkest);
+  flex-direction: column;
 }
 
 .settingsmodal-style-7 {
-  flex: 1;
-  padding: 12px 0;
+  padding: 16px 20px;
   background: none;
   border: none;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 12px;
   cursor: pointer;
   font-weight: 600;
   font-size: 13px;
 }
 
 .settingsmodal-style-8 {
-  flex: 1;
-  padding: 12px 0;
+  padding: 16px 20px;
   background: none;
   border: none;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 12px;
   cursor: pointer;
   font-weight: 600;
   font-size: 13px;
@@ -498,9 +515,95 @@
 
 .tab-btn {
   color: var(--color-text-secondary);
-  border-bottom: 2px solid transparent;
+  border-left: 3px solid transparent;
 }
 .tab-btn.active {
   color: var(--color-accent);
-  border-bottom: 2px solid var(--color-accent);
+  background-color: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid var(--color-accent);
+}
+
+.settingsmodal-style-64 {
+  display: flex;
+  align-items: center;
+  margin: 20px 0;
+  gap: 12px;
+}
+
+.settingsmodal-style-65 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--color-text-main);
+}
+
+.settingsmodal-style-66 {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+}
+
+.settingsmodal-style-67 {
+  padding: 10px;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: #f87171;
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+
+.settingsmodal-style-68 {
+  padding: 12px;
+  background-color: var(--color-bg-dark);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+  border: 1px solid var(--color-border);
+}
+
+.settingsmodal-style-69 {
+  color: var(--color-text-main);
+  display: block;
+  margin-bottom: 8px;
+}
+
+.settingsmodal-style-70 {
+  margin-bottom: 4px;
+}
+
+.settingsmodal-style-71 {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.settingsmodal-style-creator-header {
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+.settingsmodal-style-creator-title {
+  font-size: 1rem;
+}
+
+.settingsmodal-style-creator-desc {
+  margin-top: 0;
+}
+
+.settingsmodal-style-creator-select {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--color-bg-darker);
+  border: 1px solid var(--color-border);
+  color: white;
+  margin-top: 0.5rem;
+}
+
+.settingsmodal-style-creator-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }

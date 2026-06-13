@@ -543,6 +543,14 @@
   margin: 0px;
 }
 
+.effectspalette-style-80 {
+  margin-top: 24px;
+}
+
+.effectspalette-style-81 {
+  margin-bottom: 16px;
+}
+
 .wait {
   cursor: wait;
 }

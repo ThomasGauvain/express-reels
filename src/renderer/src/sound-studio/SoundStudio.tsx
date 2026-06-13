@@ -85,8 +85,13 @@ export function SoundStudio(): React.ReactElement {
 
   // ── Save / Open ──────────────────────────────────────────────────────────────
   const handleSave = async (): Promise<void> => {
-    const data = JSON.stringify({ tracks, clips, bpm, totalMeasures, beatsPerMeasure }, null, 2)
-    await ssApi?.saveProject(data)
+    try {
+      const data = JSON.stringify({ tracks, clips, bpm, totalMeasures, beatsPerMeasure }, null, 2)
+      await ssApi?.saveProject(data)
+    } catch (e) {
+      alert(`Failed to save project: ${e instanceof Error ? e.message : String(e)}`)
+      console.error('Save Project Error:', e)
+    }
   }
 
   const handleOpen = async (): Promise<void> => {
@@ -105,6 +110,15 @@ export function SoundStudio(): React.ReactElement {
     }
   }
 
+  const blobToBase64 = (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve((reader.result as string).split(',')[1])
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  }
+
   // ── Export ───────────────────────────────────────────────────────────────────
   const handleExport = async (format: 'wav' | 'mp3' | 'aac'): Promise<void> => {
     await audioEngine.preloadAllSamples()
@@ -115,20 +129,47 @@ export function SoundStudio(): React.ReactElement {
       totalMeasures,
       beatsPerMeasure
     )
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(wavBuffer)))
+
+    // Safely convert to base64 using FileReader
+    const blob = new Blob([wavBuffer], { type: 'audio/wav' })
+    const base64 = await blobToBase64(blob)
+
     await ssApi?.exportAudio(base64, format)
+  }
+
+  const handleSendToLibrary = async (): Promise<void> => {
+    await audioEngine.preloadAllSamples()
+    const wavBuffer = await audioEngine.exportToWav(
+      clips,
+      tracks,
+      bpm,
+      totalMeasures,
+      beatsPerMeasure
+    )
+    const blob = new Blob([wavBuffer], { type: 'audio/wav' })
+    const base64 = await blobToBase64(blob)
+    ssApi?.sendToLibrary(JSON.stringify({ type: 'audio-export', bpm, base64 }))
   }
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────────
   React.useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+
+      const key = e.key.toLowerCase()
+
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && key === 'z') {
         e.preventDefault()
         undo()
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+      } else if ((e.ctrlKey || e.metaKey) && (key === 'y' || (e.shiftKey && key === 'z'))) {
         e.preventDefault()
         redo()
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        const { selectedClipId, removeClip } = useSoundStudioStore.getState()
+        if (selectedClipId) {
+          removeClip(selectedClipId)
+        }
       }
     }
     window.addEventListener('keydown', handler)
@@ -182,11 +223,7 @@ export function SoundStudio(): React.ReactElement {
           <button className="ss-btn" onClick={() => handleExport('aac')} title="Export AAC">
             <Download size={11} /> AAC
           </button>
-          <button
-            className="ss-btn"
-            onClick={() => ssApi?.sendToLibrary(JSON.stringify({ type: 'audio-export', bpm }))}
-            title="Send to Main App Library"
-          >
+          <button className="ss-btn" onClick={handleSendToLibrary} title="Send to Main App Library">
             <Send size={11} /> Send to Library
           </button>
           <button className="ss-btn danger" onClick={clearAll} title="Clear All Tracks">

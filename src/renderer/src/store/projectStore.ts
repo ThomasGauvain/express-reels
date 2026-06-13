@@ -17,7 +17,19 @@ const electronStorage: StateStorage = {
 }
 import { KenBurnsEffect, KenBurnsKeyframe } from '../lib/kenBurns'
 
-export type MediaType = 'image' | 'video' | 'audio' | 'composition'
+export interface CreatorProfile {
+  name: string
+  handles: {
+    instagram: string
+    facebook: string
+    tiktok: string
+    youtube: string
+    twitter: string
+    linkedin: string
+  }
+}
+
+export type MediaType = 'image' | 'video' | 'audio' | 'composition' | 'effect'
 
 export interface MediaItem {
   id: string
@@ -29,6 +41,8 @@ export interface MediaItem {
   duration?: number // For video/audio
   subClips?: Clip[] // For compositions
   subTracks?: Track[] // For compositions
+  effect?: VisualEffect
+  attribution?: string // For CC-BY license requirements
 }
 
 export interface Track {
@@ -63,6 +77,12 @@ export interface AudioConfig {
   keyframes?: AudioKeyframe[]
 }
 
+export interface VideoProperties {
+  opacity: number // 0 to 1
+  grayscale: number // 0 to 100
+  sharpness: number // 0 to 100
+}
+
 export interface Clip {
   id: string
   mediaId: string // empty for effect clips
@@ -77,6 +97,7 @@ export interface Clip {
   fadeIn?: number
   fadeOut?: number
   audioConfig?: AudioConfig
+  videoProperties?: VideoProperties
   subClips?: Clip[] // For Compound Clips
   subTracks?: Track[] // For Compound Clips
   isCollapsed?: boolean // True if this is a Compound Clip
@@ -108,6 +129,8 @@ interface ProjectState {
   autoAdjustTargetDuration: boolean
   isKenBurnsLocked: boolean
 
+  creatorProfile: CreatorProfile
+
   // Auth & Settings State
   currentUser: { id: string; name: string; email: string; password?: string } | null
   aiKeys: {
@@ -123,9 +146,13 @@ interface ProjectState {
   audioCategories: { sfx: string[]; music: string[] }
   vfxCategories: string[]
   exportSettings: {
-    format: 'webm' | 'mp4'
+    format: 'webm' | 'mp4' | 'mov' | 'mkv' | 'avi'
+    codec: 'h264' | 'h265' | 'vp9' | 'mpeg4' | 'prores'
+    quality: 'low' | 'medium' | 'high'
+    hwAccel: boolean
     aspectRatio: '16:9' | '9:16' | '4:5' | '1:1'
-    resolution: 1080 | 720 | 2160
+    resolution: 720 | 1080 | 1440 | 2160
+    fps: 24 | 30 | 60
   }
 
   // Actions
@@ -135,6 +162,7 @@ interface ProjectState {
 
   // Project Actions
   newProject: () => void
+  updateCreatorProfile: (profile: Partial<CreatorProfile>) => void
   loadProject: (stateData: Partial<ProjectState>) => void
 
   // Auth & Settings Actions
@@ -178,6 +206,8 @@ interface ProjectState {
   removeClip: (id: string) => void
   splitClip: (clipId: string, time: number) => void
   deleteSection: (startTime: number, endTime: number) => void
+  removeDeletedSection: (id: string) => void
+  clearDeletedSections: () => void
 
   // Ken Burns Actions (Now scoped to Clip)
   setKenBurnsEffect: (clipId: string, effect: KenBurnsEffect) => void
@@ -197,9 +227,13 @@ interface ProjectState {
 
   setExportSettings: (
     settings: Partial<{
-      format: 'webm' | 'mp4'
+      format: 'webm' | 'mp4' | 'mov' | 'mkv' | 'avi'
+      codec: 'h264' | 'h265' | 'vp9' | 'mpeg4' | 'prores'
+      quality: 'low' | 'medium' | 'high'
+      hwAccel: boolean
       aspectRatio: '16:9' | '9:16' | '4:5' | '1:1'
-      resolution: 1080 | 720 | 2160
+      resolution: 720 | 1080 | 1440 | 2160
+      fps: 24 | 30 | 60
     }>
   ) => void
 
@@ -238,8 +272,20 @@ export const useProjectStore = create<ProjectState>()(
       rangeSelectedTrackIds: [],
       rangeMasterTrackId: null,
       targetDuration: null,
-      autoAdjustTargetDuration: true,
-      isKenBurnsLocked: true,
+      autoAdjustTargetDuration: false,
+      isKenBurnsLocked: false,
+
+      creatorProfile: {
+        name: '',
+        handles: {
+          instagram: '',
+          facebook: '',
+          tiktok: '',
+          youtube: '',
+          twitter: '',
+          linkedin: ''
+        }
+      },
 
       currentUser: null,
       aiKeys: { geminiTier: 'free' },
@@ -249,9 +295,13 @@ export const useProjectStore = create<ProjectState>()(
       },
       vfxCategories: ['filter', 'transition', 'blur', 'color', 'glitch', 'cinema'],
       exportSettings: {
-        format: 'webm',
+        format: 'mp4',
+        codec: 'h264',
+        quality: 'medium',
+        hwAccel: true,
         aspectRatio: '9:16',
-        resolution: 1080
+        resolution: 1080,
+        fps: 30
       },
 
       setExportSettings: (settings) =>
@@ -260,18 +310,31 @@ export const useProjectStore = create<ProjectState>()(
       past: [],
       future: [],
 
-      saveHistory: () =>
+      updateCreatorProfile: (profile: Partial<CreatorProfile>): void => {
+        set((state) => ({
+          creatorProfile: { ...state.creatorProfile, ...profile }
+        }))
+      },
+
+      saveHistory: (): void => {
         set((state) => {
-          const currentSnapshot = {
-            clips: JSON.parse(JSON.stringify(state.clips)),
-            mediaLibrary: JSON.parse(JSON.stringify(state.mediaLibrary)),
-            deletedSections: JSON.parse(JSON.stringify(state.deletedSections))
+          if (state.clips.length === 0 && state.past.length === 0) return state
+          try {
+            const currentSnapshot = {
+              clips: JSON.parse(JSON.stringify(state.clips)),
+              mediaLibrary: JSON.parse(JSON.stringify(state.mediaLibrary)),
+              deletedSections: JSON.parse(JSON.stringify(state.deletedSections || []))
+            }
+            return {
+              past: [...state.past, currentSnapshot].slice(-50),
+              future: []
+            }
+          } catch (error) {
+            console.error('History save failed:', error)
+            return state
           }
-          return {
-            past: [...state.past, currentSnapshot].slice(-50),
-            future: []
-          }
-        }),
+        })
+      },
 
       undo: () =>
         set((state) => {
@@ -280,16 +343,21 @@ export const useProjectStore = create<ProjectState>()(
           const newPast = [...state.past]
           const previousState = newPast.pop()!
 
-          const currentSnapshot = {
-            clips: JSON.parse(JSON.stringify(state.clips)),
-            mediaLibrary: JSON.parse(JSON.stringify(state.mediaLibrary)),
-            deletedSections: JSON.parse(JSON.stringify(state.deletedSections))
-          }
+          try {
+            const currentSnapshot = {
+              clips: JSON.parse(JSON.stringify(state.clips)),
+              mediaLibrary: JSON.parse(JSON.stringify(state.mediaLibrary)),
+              deletedSections: JSON.parse(JSON.stringify(state.deletedSections || []))
+            }
 
-          return {
-            ...previousState,
-            past: newPast,
-            future: [currentSnapshot, ...state.future]
+            return {
+              ...previousState,
+              past: newPast,
+              future: [currentSnapshot, ...state.future]
+            }
+          } catch (error) {
+            console.error('History undo failed:', error)
+            return { ...previousState, past: newPast }
           }
         }),
 
@@ -300,16 +368,21 @@ export const useProjectStore = create<ProjectState>()(
           const newFuture = [...state.future]
           const nextState = newFuture.shift()!
 
-          const currentSnapshot = {
-            clips: JSON.parse(JSON.stringify(state.clips)),
-            mediaLibrary: JSON.parse(JSON.stringify(state.mediaLibrary)),
-            deletedSections: JSON.parse(JSON.stringify(state.deletedSections))
-          }
+          try {
+            const currentSnapshot = {
+              clips: JSON.parse(JSON.stringify(state.clips)),
+              mediaLibrary: JSON.parse(JSON.stringify(state.mediaLibrary)),
+              deletedSections: JSON.parse(JSON.stringify(state.deletedSections || []))
+            }
 
-          return {
-            ...nextState,
-            past: [...state.past, currentSnapshot],
-            future: newFuture
+            return {
+              ...nextState,
+              past: [...state.past, currentSnapshot],
+              future: newFuture
+            }
+          } catch (error) {
+            console.error('History redo failed:', error)
+            return { ...nextState, future: newFuture }
           }
         }),
 
@@ -347,7 +420,8 @@ export const useProjectStore = create<ProjectState>()(
         }),
 
       loadProject: (stateData) =>
-        set({
+        set((state) => ({
+          tracks: stateData.tracks || state.tracks,
           clips: stateData.clips || [],
           mediaLibrary: stateData.mediaLibrary || [],
           deletedSections: stateData.deletedSections || [],
@@ -360,7 +434,7 @@ export const useProjectStore = create<ProjectState>()(
           activeKeyframeId: null,
           past: [],
           future: []
-        }),
+        })),
 
       login: (email, name, password) =>
         set({
@@ -602,7 +676,7 @@ export const useProjectStore = create<ProjectState>()(
                 : null
               : state.targetDuration,
             deletedSections: [
-              ...state.deletedSections,
+              ...(state.deletedSections || []),
               {
                 id: crypto.randomUUID(),
                 originalClip: clipToDelete,
@@ -773,6 +847,18 @@ export const useProjectStore = create<ProjectState>()(
         })
       },
 
+      removeDeletedSection: (id) => {
+        get().saveHistory()
+        set((state) => ({
+          deletedSections: state.deletedSections.filter((s) => s.id !== id)
+        }))
+      },
+
+      clearDeletedSections: () => {
+        get().saveHistory()
+        set({ deletedSections: [] })
+      },
+
       setKenBurnsEffect: (clipId, effect) =>
         set((state) => {
           return {
@@ -934,10 +1020,16 @@ export const useProjectStore = create<ProjectState>()(
             }
           } else {
             // Drop effect as a standalone clip on the Effects track
-            const effectTrack = state.tracks.find((t) => t.type === 'effect')
-            if (!effectTrack) return state // fallback if no effect track
+            let effectTrack = state.tracks.find((t) => t.type === 'effect')
+            let newTracks = state.tracks
+
+            if (!effectTrack) {
+              effectTrack = { id: crypto.randomUUID(), name: 'Effects', type: 'effect' }
+              newTracks = [...state.tracks, effectTrack]
+            }
 
             return {
+              tracks: newTracks,
               clips: [
                 ...state.clips,
                 {

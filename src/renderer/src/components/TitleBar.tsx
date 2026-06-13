@@ -41,16 +41,23 @@ export function TitleBar(): React.ReactElement {
     window.electron.ipcRenderer.send('window-close')
   }
   const handleSaveProject = async (): Promise<void> => {
-    const state = useProjectStore.getState()
-    const projectData = {
-      clips: state.clips,
-      mediaLibrary: state.mediaLibrary,
-      deletedSections: state.deletedSections,
-      targetDuration: state.targetDuration,
-      autoAdjustTargetDuration: state.autoAdjustTargetDuration
-    }
-    await window.api.saveProject(JSON.stringify(projectData, null, 2))
     setOpenMenu(null)
+    try {
+      const state = useProjectStore.getState()
+      const projectData = {
+        tracks: state.tracks,
+        clips: state.clips,
+        mediaLibrary: state.mediaLibrary,
+        deletedSections: state.deletedSections,
+        targetDuration: state.targetDuration,
+        autoAdjustTargetDuration: state.autoAdjustTargetDuration
+      }
+      const jsonStr = JSON.stringify(projectData, null, 2)
+      await window.api.saveProject(jsonStr)
+    } catch (e) {
+      alert(`Failed to save project: ${e instanceof Error ? e.message : String(e)}`)
+      console.error('Save Project Error:', e)
+    }
   }
   const handleOpenProject = async (): Promise<void> => {
     const result = await window.api.openProject()

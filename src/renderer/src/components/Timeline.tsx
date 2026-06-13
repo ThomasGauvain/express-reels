@@ -3,6 +3,7 @@ import React, { useRef, useState, useEffect } from 'react'
 import { useProjectStore, Clip } from '../store/projectStore'
 import { AudioWaveform } from './AudioWaveform'
 import { calculateKenBurnsTransform } from '../lib/kenBurns'
+import { useShallow } from 'zustand/react/shallow'
 
 const getMediaUrl = (path: string): string => {
   if (!path) return ''
@@ -222,7 +223,26 @@ export function Timeline(): React.ReactElement {
     setRangeMarkers,
     rangeSelectedTrackIds,
     setRangeSelectedTracks
-  } = useProjectStore()
+  } = useProjectStore(
+    useShallow((s) => ({
+      tracks: s.tracks,
+      clips: s.clips,
+      setPlayhead: s.setPlayhead,
+      activeTool: s.activeTool,
+      mediaLibrary: s.mediaLibrary,
+      addClip: s.addClip,
+      updateClip: s.updateClip,
+      splitClip: s.splitClip,
+      deleteSection: s.deleteSection,
+      selectedClipId: s.selectedClipId,
+      activeKeyframeId: s.activeKeyframeId,
+      targetDuration: s.targetDuration,
+      rangeMarkers: s.rangeMarkers,
+      setRangeMarkers: s.setRangeMarkers,
+      rangeSelectedTrackIds: s.rangeSelectedTrackIds,
+      setRangeSelectedTracks: s.setRangeSelectedTracks
+    }))
+  )
   const timelineRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const rulerScrollRef = useRef<HTMLDivElement>(null)
@@ -526,7 +546,7 @@ export function Timeline(): React.ReactElement {
             updateClip(clip.id, {
               startTime: newStart,
               duration: newDuration,
-              sourceOffset: clip.sourceOffset + timeDiff
+              sourceOffset: (clip.sourceOffset || 0) + timeDiff
             })
           }
         } else {
@@ -886,6 +906,7 @@ export function Timeline(): React.ReactElement {
       <div
         className="timeline-bg timeline-style-6"
         ref={scrollContainerRef}
+        tabIndex={0}
         onScroll={(e) => {
           if (rulerScrollRef.current) {
             rulerScrollRef.current.scrollLeft = (e.target as HTMLDivElement).scrollLeft
@@ -1265,7 +1286,7 @@ export function Timeline(): React.ReactElement {
                                     : 'cursor-turtle'
                                   : isAltPressed
                                     ? 'cursor-speed'
-                                    : 'cursor-scissors'
+                                    : ''
                               }`}
                             />
                             <div
@@ -1286,7 +1307,7 @@ export function Timeline(): React.ReactElement {
                                     : 'cursor-turtle'
                                   : isAltPressed
                                     ? 'cursor-speed'
-                                    : 'cursor-scissors'
+                                    : ''
                               }`}
                             />
                           </>

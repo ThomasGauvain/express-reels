@@ -296,7 +296,17 @@ export const useSoundStudioStore = create<SoundStudioState>((set, get) => ({
   subdivision: '1/16',
   totalMeasures: 8,
 
-  tracks: [],
+  tracks: [
+    {
+      id: crypto.randomUUID(),
+      name: 'Drum Kit',
+      instrumentId: 'drum-kit',
+      muted: false,
+      solo: false,
+      volume: 1,
+      pan: 0
+    }
+  ],
   clips: [],
 
   isPlaying: false,
@@ -400,6 +410,7 @@ export const useSoundStudioStore = create<SoundStudioState>((set, get) => ({
 
     const newTracks: SoundTrack[] = []
     const newClips: NoteClip[] = []
+    const modifiedTrackIds = new Set<string>()
 
     composition.tracks.forEach((aiTrack) => {
       const instrument = BUILT_IN_INSTRUMENTS.find((i) => i.id === aiTrack.instrumentId)
@@ -418,6 +429,8 @@ export const useSoundStudioStore = create<SoundStudioState>((set, get) => ({
           pan: 0
         }
         newTracks.push(track)
+      } else {
+        modifiedTrackIds.add(track.id)
       }
 
       const trackId = track.id
@@ -440,7 +453,7 @@ export const useSoundStudioStore = create<SoundStudioState>((set, get) => ({
 
     set((s) => ({
       tracks: [...s.tracks, ...newTracks],
-      clips: [...s.clips, ...newClips]
+      clips: [...s.clips.filter((c) => !modifiedTrackIds.has(c.trackId)), ...newClips]
     }))
   },
 

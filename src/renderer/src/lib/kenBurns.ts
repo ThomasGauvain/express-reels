@@ -6,6 +6,7 @@ export interface KenBurnsKeyframe {
   x: number // X Pan (percentage or pixels, let's say percentage from center where 0,0 is center)
   y: number // Y Pan (percentage)
   zoom: number // Zoom level (1.0 = 100%)
+  rotation?: number // Rotation in degrees
 }
 
 export interface KenBurnsEffect {
@@ -69,24 +70,39 @@ export function calculateKenBurnsTransform(
 
   // If no keyframes, return default state
   if (!keyframes || keyframes.length === 0) {
-    return { x: 0, y: 0, zoom: 1 }
+    return { x: 0, y: 0, zoom: 1, rotation: 0 }
   }
 
   // If only one keyframe, return its state
   if (keyframes.length === 1) {
-    return { x: keyframes[0].x, y: keyframes[0].y, zoom: keyframes[0].zoom }
+    return {
+      x: keyframes[0].x,
+      y: keyframes[0].y,
+      zoom: keyframes[0].zoom,
+      rotation: keyframes[0].rotation || 0
+    }
   }
 
   // Sort keyframes by time
   const sorted = [...keyframes].sort((a, b) => a.time - b.time)
 
-  let result = { x: 0, y: 0, zoom: 1 }
+  let result = { x: 0, y: 0, zoom: 1, rotation: 0 }
   const lastKeyframe = sorted[sorted.length - 1]
 
   if (currentTime <= sorted[0].time) {
-    result = { x: sorted[0].x, y: sorted[0].y, zoom: sorted[0].zoom }
+    result = {
+      x: sorted[0].x,
+      y: sorted[0].y,
+      zoom: sorted[0].zoom,
+      rotation: sorted[0].rotation || 0
+    }
   } else if (currentTime >= lastKeyframe.time) {
-    result = { x: lastKeyframe.x, y: lastKeyframe.y, zoom: lastKeyframe.zoom }
+    result = {
+      x: lastKeyframe.x,
+      y: lastKeyframe.y,
+      zoom: lastKeyframe.zoom,
+      rotation: lastKeyframe.rotation || 0
+    }
   } else {
     for (let i = 0; i < sorted.length - 1; i++) {
       const k1 = sorted[i]
@@ -99,7 +115,8 @@ export function calculateKenBurnsTransform(
         result = {
           x: interpolateValue(k1.x, k2.x, progress, easing),
           y: interpolateValue(k1.y, k2.y, progress, easing),
-          zoom: interpolateValue(k1.zoom, k2.zoom, progress, easing)
+          zoom: interpolateValue(k1.zoom, k2.zoom, progress, easing),
+          rotation: interpolateValue(k1.rotation || 0, k2.rotation || 0, progress, easing)
         }
         break
       }

@@ -13,6 +13,15 @@ const getMediaUrl = (path: string) => {
   return `file:///${path.replace(/\\/g, '/')}`
 }
 
+// --- Global Audio Context ---
+let sharedAudioCtx: AudioContext | null = null
+const getSharedAudioCtx = () => {
+  if (!sharedAudioCtx) {
+    sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+  }
+  return sharedAudioCtx
+}
+
 // --- Audio Player Component ---
 const AudioPlayer = ({ clip }: { clip: Clip }) => {
   const media = useProjectStore((s) => s.mediaLibrary.find((m) => m.id === clip.mediaId))
@@ -32,7 +41,7 @@ const AudioPlayer = ({ clip }: { clip: Clip }) => {
     const el = audioRef.current as any
 
     if (!el.__audioCtx) {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const ctx = getSharedAudioCtx()
       const source = ctx.createMediaElementSource(el)
       const gain = ctx.createGain()
       const panner = ctx.createStereoPanner()
@@ -194,7 +203,11 @@ const AudioPlayer = ({ clip }: { clip: Clip }) => {
 
         if (state.isPlaying && audioRef.current.paused) {
           if (ctxRef.current.state === 'suspended') ctxRef.current.resume()
-          audioRef.current.play().catch((e) => console.error(`[AudioPlayer] Play blocked:`, e))
+          audioRef.current.play().catch((e) => {
+            if (e.name !== 'AbortError') {
+              console.log(`[AudioPlayer] Play blocked:`, e)
+            }
+          })
         } else if (!state.isPlaying && !audioRef.current.paused) {
           audioRef.current.pause()
         }
@@ -220,7 +233,8 @@ const VideoPlayer = ({
   transform,
   zIndex,
   className,
-  dataClipId
+  dataClipId,
+  isMainTrack
 }: {
   clip: Clip
   media: MediaItem
@@ -228,22 +242,31 @@ const VideoPlayer = ({
   zIndex: number
   className?: string
   dataClipId: string
+  isMainTrack: boolean
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [isBuffering, setIsBuffering] = useState(() => {
+    const p = useProjectStore.getState().playhead
+    return p >= clip.startTime - 2 && p < clip.startTime + (clip.duration || 5) + 2
+  })
 
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.style.transform = transform
       videoRef.current.style.zIndex = zIndex.toString()
+      const targetName = (clip.name || media?.name || '').toLowerCase()
+      const isExplicitOverlay = targetName.includes('overlay') || targetName.includes('screen')
+      videoRef.current.style.mixBlendMode =
+        isExplicitOverlay || !isMainTrack ? 'screen' : 'normal'
     }
-  }, [transform, zIndex])
+  }, [transform, zIndex, clip, media, isBuffering, isMainTrack])
 
   useEffect(() => {
     // Initial sync
     const state = useProjectStore.getState()
     if (videoRef.current) {
       const playbackRate = clip.audioConfig?.playbackRate || 1
-      const localTime = clip.sourceOffset + (state.playhead - clip.startTime) * playbackRate
+      const localTime = (clip.sourceOffset || 0) + (state.playhead - clip.startTime) * playbackRate
       const isActive =
         state.playhead >= clip.startTime && state.playhead < clip.startTime + clip.duration
       videoRef.current.style.visibility = isActive ? 'visible' : 'hidden'
@@ -251,13 +274,30 @@ const VideoPlayer = ({
         videoRef.current.currentTime = localTime
         videoRef.current.playbackRate = playbackRate
       }
+
+      // Initial src buffer sync
+      const isBuffering =
+        state.playhead >= clip.startTime - 2 &&
+        state.playhead < clip.startTime + (clip.duration || 5) + 2
+
+      if (isBuffering && !videoRef.current.hasAttribute('src')) {
+        videoRef.current.src = getMediaUrl(media.path || media.thumbnail || '')
+        videoRef.current.load()
+      }
     }
 
     return useProjectStore.subscribe((state, prevState) => {
+      const newIsBuffering =
+        state.playhead >= clip.startTime - 2 &&
+        state.playhead < clip.startTime + (clip.duration || 5) + 2
+
+      setIsBuffering(newIsBuffering)
+
       if (!videoRef.current) return
 
       const playbackRate = clip.audioConfig?.playbackRate || 1
-      const localTime = clip.sourceOffset + (state.playhead - clip.startTime) * playbackRate
+      const localTime = (clip.sourceOffset || 0) + (state.playhead - clip.startTime) * playbackRate
+
       const isActive =
         state.playhead >= clip.startTime && state.playhead < clip.startTime + clip.duration
 
@@ -283,16 +323,19 @@ const VideoPlayer = ({
       if (isActive) {
         const isScrubbing = !state.isPlaying
         const justStartedPlaying = state.isPlaying && !prevState.isPlaying
-        const massiveDrift = Math.abs(videoRef.current.currentTime - localTime) > 1.0
 
-        if (isScrubbing || justStartedPlaying || massiveDrift) {
+        if (isScrubbing || justStartedPlaying) {
           if (Math.abs(videoRef.current.currentTime - localTime) > 0.1) {
             videoRef.current.currentTime = localTime
           }
         }
 
         if (state.isPlaying && videoRef.current.paused) {
-          videoRef.current.play().catch((e) => console.log('Video play blocked', e))
+          videoRef.current.play().catch((e) => {
+            if (e.name !== 'AbortError') {
+              console.log(`[VideoPlayer] Play blocked:`, e)
+            }
+          })
         } else if (!state.isPlaying && !videoRef.current.paused) {
           videoRef.current.pause()
         }
@@ -302,16 +345,21 @@ const VideoPlayer = ({
         }
       }
     })
-  }, [clip])
+  }, [clip, media])
+
+  // Visibility and active state are handled by React
+
+  if (!isBuffering) return null
 
   return (
     <video
       ref={videoRef}
       src={getMediaUrl(media.path || media.thumbnail || '')}
-      className={className}
+      className={`${className || ''} pointer-events-none`}
       data-clip-id={dataClipId}
       playsInline
       muted
+      loop
     />
   )
 }
@@ -338,21 +386,25 @@ const ImagePlayer = ({
     if (imgRef.current) {
       imgRef.current.style.transform = transform
       imgRef.current.style.zIndex = zIndex.toString()
+      const targetName = (clip.name || media?.name || '').toLowerCase()
+      const isExplicitOverlay = targetName.includes('overlay') || targetName.includes('screen')
+      // Only apply screen to images if they explicitly say overlay (images can have natural transparency)
+      imgRef.current.style.mixBlendMode = isExplicitOverlay ? 'screen' : 'normal'
     }
-  }, [transform, zIndex])
+  }, [transform, zIndex, clip, media])
 
   useEffect(() => {
     const state = useProjectStore.getState()
     if (imgRef.current) {
       const isActive =
-        state.playhead >= clip.startTime && state.playhead < clip.startTime + clip.duration
+        state.playhead >= clip.startTime && state.playhead < clip.startTime + (clip.duration || 5)
       imgRef.current.style.visibility = isActive ? 'visible' : 'hidden'
     }
 
     return useProjectStore.subscribe((state) => {
       if (!imgRef.current) return
       const isActive =
-        state.playhead >= clip.startTime && state.playhead < clip.startTime + clip.duration
+        state.playhead >= clip.startTime && state.playhead < clip.startTime + (clip.duration || 5)
 
       if (isActive) {
         let currentOpacity = 1
@@ -360,8 +412,8 @@ const ImagePlayer = ({
         if (clip.fadeIn && clipTime < clip.fadeIn) {
           currentOpacity = clipTime / clip.fadeIn
         }
-        if (clip.fadeOut && clipTime > clip.duration - clip.fadeOut) {
-          currentOpacity = (clip.duration - clipTime) / clip.fadeOut
+        if (clip.fadeOut && clipTime > (clip.duration || 5) - clip.fadeOut) {
+          currentOpacity = ((clip.duration || 5) - clipTime) / clip.fadeOut
         }
         imgRef.current.style.opacity = currentOpacity.toString()
         imgRef.current.style.visibility = 'visible'
@@ -375,7 +427,7 @@ const ImagePlayer = ({
     <img
       ref={imgRef}
       src={getMediaUrl(media.path || media.thumbnail || '')}
-      className={className}
+      className={`${className || ''} pointer-events-none`}
       data-clip-id={dataClipId}
       draggable={false}
       alt="Media"
@@ -708,6 +760,9 @@ export function LivePreview(): React.ReactElement | null {
 
               const transformStr = `scale(${t.zoom}) translate(${t.x}%, ${t.y}%)`
 
+              const isMainTrack =
+                tracks.findIndex((t) => t.id === clip.trackId) === tracks.length - 1
+
               if (media.type === 'video') {
                 return (
                   <VideoPlayer
@@ -718,6 +773,7 @@ export function LivePreview(): React.ReactElement | null {
                     zIndex={i}
                     className="live-preview-media-item"
                     dataClipId={clip.id}
+                    isMainTrack={isMainTrack}
                   />
                 )
               } else {

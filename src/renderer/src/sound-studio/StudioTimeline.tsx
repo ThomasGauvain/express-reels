@@ -39,7 +39,6 @@ export function StudioTimeline({ cellWidth }: StudioTimelineProps): React.ReactE
   const setSelectedClipId = useSoundStudioStore((s) => s.setSelectedClipId)
   const addTrack = useSoundStudioStore((s) => s.addTrack)
   const removeTrack = useSoundStudioStore((s) => s.removeTrack)
-  const removeClip = useSoundStudioStore((s) => s.removeClip)
   const updateTrack = useSoundStudioStore((s) => s.updateTrack)
   const addClip = useSoundStudioStore((s) => s.addClip)
 
@@ -426,15 +425,18 @@ export function StudioTimeline({ cellWidth }: StudioTimelineProps): React.ReactE
                         key={clip.id}
                         className={`ss-note-clip ${isClipSelected ? 'selected' : ''}`}
                         data-clip={clip.id}
-                        onClick={(e) => {
+                        onMouseDown={(e) => {
+                          if (document.activeElement instanceof HTMLElement) {
+                            document.activeElement.blur()
+                          }
                           e.stopPropagation()
                           setSelectedClipId(clip.id)
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault()
-                          removeClip(clip.id)
+                          setSelectedClipId(clip.id)
                         }}
-                        title={`${clip.pitch || 'hit'} @ beat ${clip.startBeat.toFixed(2)} (right-click to delete)`}
+                        title={`${clip.pitch || 'hit'} @ beat ${clip.startBeat.toFixed(2)} (right-click to edit)`}
                       >
                         <div className="ss-note-clip-label">{clip.pitch || track.name}</div>
 

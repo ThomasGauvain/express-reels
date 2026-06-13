@@ -10,7 +10,8 @@ const api = {
   openExternal: (url: string) => ipcRenderer.send('open-external-url', url),
   saveThumbnail: (id: string, base64: string) => ipcRenderer.invoke('save-thumbnail', id, base64),
   readSettings: (key: string) => ipcRenderer.invoke('settings:read', key),
-  writeSettings: (key: string, data: string) => ipcRenderer.invoke('settings:write', key, data)
+  writeSettings: (key: string, data: string) => ipcRenderer.invoke('settings:write', key, data),
+  getGpuInfo: () => ipcRenderer.invoke('system:getGpuInfo')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

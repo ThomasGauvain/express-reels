@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import './EffectsPalette.css'
 import { useProjectStore } from '../store/projectStore'
+import { useShallow } from 'zustand/react/shallow'
 import { calculateKenBurnsTransform } from '../lib/kenBurns'
 import { Plus, Trash2, Wand2, ArrowRight, BrainCircuit, Loader2 } from 'lucide-react'
 import { VFXBrowserModal } from './VFXBrowserModal'
@@ -19,7 +20,21 @@ export function EffectsPalette(): React.ReactElement | null {
     updateKenBurnsEffect,
     removeVisualEffect,
     aiKeys
-  } = useProjectStore()
+  } = useProjectStore(
+    useShallow((s) => ({
+      selectedClipId: s.selectedClipId,
+      activeKeyframeId: s.activeKeyframeId,
+      setActiveKeyframeId: s.setActiveKeyframeId,
+      clips: s.clips,
+      mediaLibrary: s.mediaLibrary,
+      addKenBurnsKeyframe: s.addKenBurnsKeyframe,
+      removeKenBurnsKeyframe: s.removeKenBurnsKeyframe,
+      updateKenBurnsKeyframe: s.updateKenBurnsKeyframe,
+      updateKenBurnsEffect: s.updateKenBurnsEffect,
+      removeVisualEffect: s.removeVisualEffect,
+      aiKeys: s.aiKeys
+    }))
+  )
   const [showVFXBrowser, setShowVFXBrowser] = useState(false)
   const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false)
   const selectedClip = clips.find((c) => c.id === selectedClipId)
@@ -393,16 +408,18 @@ export function EffectsPalette(): React.ReactElement | null {
                 })()}
               </div>
             )}
+
+            {/* Video Properties Panel */}
+            <VideoPropertiesPanel
+              clipId={selectedClip.id}
+              videoProperties={selectedClip.videoProperties}
+              updateClip={useProjectStore.getState().updateClip}
+            />
           </>
         )}
       </div>
 
-      {showVFXBrowser && (
-        <VFXBrowserModal
-          onClose={() => setShowVFXBrowser(false)}
-          selectedClipId={selectedClip.id}
-        />
-      )}
+      {showVFXBrowser && <VFXBrowserModal onClose={() => setShowVFXBrowser(false)} />}
     </div>
   )
 }
@@ -576,6 +593,74 @@ const AudioPropertiesPanel = ({
             <div className="toggle-thumb" />
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+const VideoPropertiesPanel = ({
+  clipId,
+  videoProperties,
+  updateClip
+}: {
+  clipId: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  videoProperties: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  updateClip: any
+}): React.ReactElement => {
+  const config = videoProperties || {
+    opacity: 1,
+    grayscale: 0,
+    sharpness: 0
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const update = (key: string, value: any): void => {
+    updateClip(clipId, {
+      videoProperties: {
+        ...config,
+        [key]: value
+      }
+    })
+  }
+
+  return (
+    <div className="effectspalette-style-56 effectspalette-style-80">
+      <div className="effectspalette-style-29 effectspalette-style-81">Video Properties</div>
+
+      <div className="effectspalette-style-57">
+        <div className="effectspalette-style-58">
+          <span>Opacity</span>
+          <span>{Math.round(config.opacity * 100)}%</span>
+        </div>
+        <input
+          type="range"
+          title="Adjust Opacity"
+          min="0"
+          max="1"
+          step="0.01"
+          value={config.opacity}
+          onChange={(e) => update('opacity', parseFloat(e.target.value))}
+          className="effectspalette-style-59"
+        />
+      </div>
+
+      <div className="effectspalette-style-57">
+        <div className="effectspalette-style-58">
+          <span>Black & White</span>
+          <span>{Math.round(config.grayscale)}%</span>
+        </div>
+        <input
+          type="range"
+          title="Adjust Grayscale"
+          min="0"
+          max="100"
+          step="1"
+          value={config.grayscale}
+          onChange={(e) => update('grayscale', parseFloat(e.target.value))}
+          className="effectspalette-style-59"
+        />
       </div>
     </div>
   )

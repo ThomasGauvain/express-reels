@@ -1,13 +1,15 @@
 /* eslint-disable */
 import './AudioBrowserModal.css'
 import React, { useState, useRef, useEffect } from 'react'
-import { X, Search, Play, Pause, Plus, AlertCircle, Music, Zap } from 'lucide-react'
+import { X, Search, Play, Pause, Plus, AlertCircle, Music, Zap, Check } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 interface FreesoundHit {
   id: number
   name: string
   tags: string[]
   duration: number
+  username: string
+  license: string
   previews: {
     'preview-hq-mp3': string
   }
@@ -20,6 +22,7 @@ interface JamendoHit {
   image: string
   audio: string
   audiodownload: string
+  license_ccurl?: string
 }
 export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.ReactElement {
   const [activeTab, setActiveTab] = useState<'sfx' | 'music'>('sfx')
@@ -28,10 +31,13 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
   const [currentTime, setCurrentTime] = useState<number>(0)
   const [sfxResults, setSfxResults] = useState<FreesoundHit[]>([])
   const [musicResults, setMusicResults] = useState<JamendoHit[]>([])
+  const hasAutoSearchedSfx = useRef(false)
+  const hasAutoSearchedMusic = useRef(false)
   const [isAddingCategory, setIsAddingCategory] = useState(false)
   const [newCategory, setNewCategory] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [downloadedItems, setDownloadedItems] = useState<Set<string | number>>(new Set())
   const { addMedia, aiKeys, audioCategories, addAudioCategory, removeAudioCategory } =
     useProjectStore()
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -58,13 +64,16 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
       try {
         const cleanToken = encodeURIComponent(freesoundKey.trim())
         const res = await fetch(
-          `https://freesound.org/apiv2/search/text/?query=${encodeURIComponent(search)}&token=${cleanToken}&fields=id,name,tags,previews,duration`
+          `https://freesound.org/apiv2/search/text/?query=${encodeURIComponent(search)}&token=${cleanToken}&fields=id,name,tags,previews,duration,username,license`
         )
-        if (!res.ok) throw new Error(`API returned ${res.status}`)
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(`API returned ${res.status}: ${errorText}`)
+        }
         const data = await res.json()
         setSfxResults(data.results || [])
-      } catch {
-        setError('Failed to fetch audio from Freesound. Check your API key or network.')
+      } catch (err: any) {
+        setError(`Freesound Error: ${err.message || 'Network failure'}`)
       } finally {
         setLoading(false)
       }
@@ -80,11 +89,14 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
         const res = await fetch(
           `https://api.jamendo.com/v3.0/tracks/?client_id=${jamendoKey}&format=json&limit=20&search=${encodeURIComponent(search)}`
         )
-        if (!res.ok) throw new Error(`API returned ${res.status}`)
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(`API returned ${res.status}: ${errorText}`)
+        }
         const data = await res.json()
         setMusicResults(data.results || [])
-      } catch {
-        setError('Failed to fetch music from Jamendo. Check your Client ID or network.')
+      } catch (err: any) {
+        setError(`Jamendo Error: ${err.message || 'Network failure'}`)
       } finally {
         setLoading(false)
       }
@@ -93,16 +105,18 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
 
   // Auto-search on tab switch if they have a key and haven't searched yet
   useEffect(() => {
-    if (activeTab === 'sfx' && freesoundKey && sfxResults.length === 0 && search) {
+    if (activeTab === 'sfx' && freesoundKey && !hasAutoSearchedSfx.current && search) {
+      hasAutoSearchedSfx.current = true
       setTimeout(() => {
         handleSearch()
       }, 0)
-    } else if (activeTab === 'music' && jamendoKey && musicResults.length === 0 && search) {
+    } else if (activeTab === 'music' && jamendoKey && !hasAutoSearchedMusic.current && search) {
+      hasAutoSearchedMusic.current = true
       setTimeout(() => {
         handleSearch()
       }, 0)
     }
-  }, [activeTab, freesoundKey, jamendoKey, musicResults.length, search, sfxResults.length])
+  }, [activeTab, freesoundKey, jamendoKey, search])
   const playUrl = (id: string | number, url: string): void => {
     // If clicking the same track that is already playing or buffering
     if (playingId === id) {
@@ -161,19 +175,35 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
   }
   const handleAddSfx = (audio: FreesoundHit): void => {
     if (!audio.previews || !audio.previews['preview-hq-mp3']) return
+
+    let attribution: string | undefined = undefined
+    if (audio.license && !audio.license.toLowerCase().includes('zero')) {
+      attribution = `Sound by ${audio.username || 'Creator'} on Freesound.org (${audio.license})`
+    }
+
     addMedia([
       {
         id: `freesound-${audio.id}`,
         path: audio.previews['preview-hq-mp3'],
         name: audio.name || 'Audio Track',
         type: 'audio',
-        duration: Math.round(audio.duration)
+        duration: Math.round(audio.duration),
+        attribution
       }
     ])
-    onClose()
+    
+    setDownloadedItems(prev => new Set(prev).add(audio.id))
   }
   const handleAddMusic = (track: JamendoHit): void => {
     if (!track.audio) return
+
+    let attribution: string | undefined = undefined
+    if (track.license_ccurl && !track.license_ccurl.includes('publicdomain')) {
+      attribution = `Music by ${track.artist_name || 'Artist'} from Jamendo (CC BY)`
+    } else if (!track.license_ccurl) {
+      attribution = `Music by ${track.artist_name || 'Artist'} from Jamendo`
+    }
+
     addMedia([
       {
         id: `jamendo-${track.id}`,
@@ -181,10 +211,12 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
         name: track.name || 'Music Track',
         type: 'audio',
         duration: track.duration,
-        thumbnail: track.image
+        thumbnail: track.image,
+        attribution
       }
     ])
-    onClose()
+    
+    setDownloadedItems(prev => new Set(prev).add(track.id))
   }
   const handleCategoryClick = (category: string): void => {
     setSearch(category)
@@ -445,10 +477,18 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
                       title="Add to Timeline"
                       aria-label="Add to Timeline"
                       onClick={() => handleAddSfx(audio)}
-                      disabled={!audio.previews || !audio.previews['preview-hq-mp3']}
+                      disabled={!audio.previews || !audio.previews['preview-hq-mp3'] || downloadedItems.has(audio.id)}
                       className={`abm-style-48 ${!audio.previews || !audio.previews['preview-hq-mp3'] ? 'abm-disabled' : 'abm-enabled'}`}
                     >
-                      <Plus size={14} /> Add
+                      {downloadedItems.has(audio.id) ? (
+                        <>
+                          <Check size={14} /> Downloaded
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={14} /> Add
+                        </>
+                      )}
                     </button>
                   </div>
                 ))}
@@ -525,10 +565,18 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
                       title="Add to Timeline"
                       aria-label="Add to Timeline"
                       onClick={() => handleAddMusic(track)}
-                      disabled={!track.audio}
+                      disabled={!track.audio || downloadedItems.has(track.id)}
                       className="abm-style-61"
                     >
-                      <Plus size={14} /> Add
+                      {downloadedItems.has(track.id) ? (
+                        <>
+                          <Check size={14} /> Downloaded
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={14} /> Add
+                        </>
+                      )}
                     </button>
                   </div>
                 ))}

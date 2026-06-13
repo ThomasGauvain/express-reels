@@ -160,3 +160,114 @@ Y is 0 at the top, 100 at the bottom.
     return null
   }
 }
+
+export interface SocialPostState {
+  history: Record<string, unknown>[]
+  currentPost: string
+}
+
+/**
+ * Starts a new social media post generation session.
+ */
+export async function startSocialMediaPost(
+  platform: string,
+  tone: string,
+  topic: string
+): Promise<SocialPostState> {
+  const ai = getAiClient()
+  
+  let context = ''
+  const mediaParts: Record<string, unknown>[] = []
+  
+  try {
+    const summary = getTimelineContextSummary()
+    if (summary) {
+      context = `\n\n--- AUTO-EXTRACTED TIMELINE CONTEXT ---\n${summary}\n`
+    }
+    
+    // Attempt to grab a frame from the playhead
+    const mediaFiles = await getVisibleMediaAtPlayhead()
+    if (mediaFiles.length > 0) {
+      for (const file of mediaFiles) {
+        mediaParts.push({
+          inlineData: {
+            mimeType: file.mimeType,
+            data: file.data
+          }
+        })
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to extract timeline context', err)
+  }
+
+  const prompt = `
+You are an expert social media manager.
+I have just exported a video to post on ${platform}.
+Tone: ${tone}
+
+${topic ? `The main topic/description provided by the user is: "${topic}"` : 'The user did not provide a description, so please infer the topic from the timeline context below.'}
+${context}
+
+Please generate an engaging social media post for ${platform}.
+Requirements:
+1. Start with a catchy, scroll-stopping Hook.
+2. Include a short, engaging story or description that fits the platform's style.
+3. Include 5-8 highly relevant hashtags.
+4. Format it cleanly so it can be directly copied and pasted. Do NOT wrap it in markdown block quotes. Just the raw text.
+5. IF there are "Required Attributions" listed in the context above (e.g. for Freesound creators), you MUST append them verbatim to the very bottom of the post, separated by an empty line. Do NOT alter them or integrate them into the story.
+`
+
+  const userParts = [{ text: prompt }, ...mediaParts]
+
+  const history: Record<string, unknown>[] = [
+    { role: 'user', parts: userParts }
+  ]
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: history
+    })
+
+    const text = response.text || ''
+    history.push({ role: 'model', parts: [{ text }] })
+
+    return { history, currentPost: text }
+  } catch (err) {
+    console.error('Failed to generate social media post:', err)
+    throw err
+  }
+}
+
+/**
+ * Continues an existing social media post generation session.
+ */
+export async function continueSocialMediaPost(
+  history: Record<string, unknown>[],
+  userMessage: string
+): Promise<SocialPostState> {
+  const ai = getAiClient()
+  
+  const newHistory = [...history]
+  const userPrompt = `
+The user says: "${userMessage}"
+Please rewrite the social media post based on this feedback. Output ONLY the rewritten post text. Do not wrap it in quotes or markdown.
+`
+  newHistory.push({ role: 'user', parts: [{ text: userPrompt }] })
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: newHistory
+    })
+
+    const text = response.text || ''
+    newHistory.push({ role: 'model', parts: [{ text }] })
+
+    return { history: newHistory, currentPost: text }
+  } catch (err) {
+    console.error('Failed to update social media post:', err)
+    throw err
+  }
+}

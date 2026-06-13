@@ -12,7 +12,10 @@ import {
   Loader2
 } from 'lucide-react'
 import { useProjectStore, VisualEffect } from '../store/projectStore'
+import { useShallow } from 'zustand/react/shallow'
 import { MOCK_EFFECTS } from '../lib/mockAssets'
+
+const DEFAULT_THUMB = `https://picsum.photos/seed/vfx/200/200`
 
 function EffectThumbnail({
   src,
@@ -58,33 +61,26 @@ type BrowserResult = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   raw?: any
 }
-export function VFXBrowserModal({
-  onClose,
-  selectedClipId
-}: {
-  onClose: () => void
-  selectedClipId?: string
-}): React.ReactElement {
+export function VFXBrowserModal({ onClose }: { onClose: () => void }): React.ReactElement {
   const [activeTab, setActiveTab] = useState<BrowserTab>('effects')
   const [search, setSearch] = useState('')
   const [newCategory, setNewCategory] = useState('')
+  const [orientationFilter, setOrientationFilter] = useState('all')
   const [selectedEffect, setSelectedEffect] = useState<BrowserResult | null>(null)
   const [cloudTransitions, setCloudTransitions] = useState<BrowserResult[]>([])
   const [isLoadingTransitions, setIsLoadingTransitions] = useState(true)
   const [cloudResults, setCloudResults] = useState<BrowserResult[]>([])
   const [isSearchingCloud, setIsSearchingCloud] = useState(false)
   const [cloudError, setCloudError] = useState<string | null>(null)
-  const {
-    addVisualEffect,
-    addMedia,
-    addClip,
-    vfxCategories,
-    addVfxCategory,
-    removeVfxCategory,
-    aiKeys,
-    playhead,
-    tracks
-  } = useProjectStore()
+  const { addMedia, vfxCategories, addVfxCategory, removeVfxCategory, aiKeys } = useProjectStore(
+    useShallow((s) => ({
+      addMedia: s.addMedia,
+      vfxCategories: s.vfxCategories,
+      addVfxCategory: s.addVfxCategory,
+      removeVfxCategory: s.removeVfxCategory,
+      aiKeys: s.aiKeys
+    }))
+  )
   useEffect(() => {
     fetch('https://unpkg.com/gl-transitions@1/gl-transitions.json')
       .then((res) => res.json())
@@ -94,7 +90,7 @@ export function VFXBrowserModal({
           id: `gl-${t.name}`,
           name: t.name,
           type: 'transition',
-          thumbnail: 'https://images.unsplash.com/photo-1682687220063-4742bd7fd538?w=200&q=80',
+          thumbnail: DEFAULT_THUMB,
           raw: {
             glTransitionId: t.name
           }
@@ -115,13 +111,25 @@ export function VFXBrowserModal({
       if (activeTab === 'overlays') {
         if (!aiKeys?.pixabay) throw new Error('Please add a Pixabay API Key in Settings.')
         const res = await fetch(
-          `https://pixabay.com/api/videos/?key=${aiKeys.pixabay}&q=${encodeURIComponent(query)}&per_page=20`
+          `https://pixabay.com/api/videos/?key=${aiKeys.pixabay}&q=${encodeURIComponent(query)}&per_page=100`
         )
         if (!res.ok) throw new Error('Pixabay API error')
         const data = await res.json()
+        let hits = data.hits || []
+        if (orientationFilter !== 'all') {
+          hits = hits.filter((hit: { videos?: { tiny?: { width: number; height: number } } }) => {
+            const w = hit.videos?.tiny?.width || 1
+            const h = hit.videos?.tiny?.height || 1
+            const ratio = w / h
+            if (orientationFilter === 'landscape') return ratio > 1.1
+            if (orientationFilter === 'portrait') return ratio < 0.9
+            if (orientationFilter === 'square') return ratio >= 0.9 && ratio <= 1.1
+            return true
+          })
+        }
         setCloudResults(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data.hits.map((hit: any) => {
+          hits.slice(0, 30).map((hit: any) => {
             const firstTag = hit.tags ? hit.tags.split(',')[0].trim() : 'Stock'
             // Use hit.picture_id properly, fallback to Vimeo CDN standard size
             const thumbUrl = hit.picture_id
@@ -141,13 +149,27 @@ export function VFXBrowserModal({
       } else if (activeTab === 'stickers') {
         if (!aiKeys?.giphy) throw new Error('Please add a Giphy API Key in Settings.')
         const res = await fetch(
-          `https://api.giphy.com/v1/stickers/search?api_key=${aiKeys.giphy}&q=${encodeURIComponent(query)}&limit=20`
+          `https://api.giphy.com/v1/stickers/search?api_key=${aiKeys.giphy}&q=${encodeURIComponent(query)}&limit=100`
         )
         if (!res.ok) throw new Error('Giphy API error')
         const data = await res.json()
+        let items = data.data || []
+        if (orientationFilter !== 'all') {
+          items = items.filter(
+            (item: { images?: { original?: { width: string; height: string } } }) => {
+              const w = parseInt(item.images?.original?.width || '1', 10)
+              const h = parseInt(item.images?.original?.height || '1', 10)
+              const ratio = w / h
+              if (orientationFilter === 'landscape') return ratio > 1.1
+              if (orientationFilter === 'portrait') return ratio < 0.9
+              if (orientationFilter === 'square') return ratio >= 0.9 && ratio <= 1.1
+              return true
+            }
+          )
+        }
         setCloudResults(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data.data.map((item: any) => ({
+          items.slice(0, 30).map((item: any) => ({
             id: item.id,
             name: item.title || 'Sticker',
             type: 'sticker',
@@ -179,13 +201,13 @@ export function VFXBrowserModal({
     }, 500)
     return () => clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, search])
+  }, [activeTab, search, orientationFilter])
 
   // Effect filtering
   const allEffects: BrowserResult[] = [
     ...MOCK_EFFECTS.map((fx) => ({
       ...fx,
-      thumbnail: 'https://images.unsplash.com/photo-1682687982501-1e58c8130bd1?w=200&q=80',
+      thumbnail: DEFAULT_THUMB,
       raw: fx
     })),
     ...cloudTransitions
@@ -195,19 +217,29 @@ export function VFXBrowserModal({
       fx.name.toLowerCase().includes(search.toLowerCase()) || fx.type.includes(search.toLowerCase())
   )
   const displayedList = activeTab === 'effects' ? filteredEffects : cloudResults
+
   const handleAdd = (): void => {
     if (!selectedEffect) return
     if (activeTab === 'effects') {
-      // Add as visual effect (either to clip or standalone effect track)
       const fx: VisualEffect = {
         id: crypto.randomUUID(),
         name: selectedEffect.name,
         type: selectedEffect.type as 'filter' | 'transition',
         ...selectedEffect.raw
       }
-      addVisualEffect(fx, selectedClipId)
+      const mediaId = crypto.randomUUID()
+      addMedia([
+        {
+          id: mediaId,
+          name: selectedEffect.name,
+          type: 'effect',
+          path: '',
+          thumbnail: selectedEffect.thumbnail,
+          duration: 5,
+          effect: fx
+        }
+      ])
     } else {
-      // Add as MediaItem and drop on a Video track
       const mediaId = crypto.randomUUID()
       addMedia([
         {
@@ -219,20 +251,7 @@ export function VFXBrowserModal({
           duration: selectedEffect.duration || 5
         }
       ])
-      const videoTrack = tracks.find((t) => t.type === 'video')
-      if (videoTrack) {
-        addClip({
-          id: crypto.randomUUID(),
-          mediaId: mediaId,
-          trackId: videoTrack.id,
-          startTime: playhead,
-          duration: selectedEffect.duration || 5,
-          sourceOffset: 0,
-          name: selectedEffect.name
-        })
-      }
     }
-    onClose()
   }
   return (
     <div className="vfxbrowsermodal-style-1">
@@ -354,7 +373,21 @@ export function VFXBrowserModal({
                   className="vfxbrowsermodal-style-26"
                 />
                 {activeTab !== 'effects' && (
-                  <button type="submit" className="vfxbrowsermodal-style-27">
+                  <select
+                    title="Orientation"
+                    aria-label="Orientation Filter"
+                    value={orientationFilter}
+                    onChange={(e) => setOrientationFilter(e.target.value)}
+                    className="vfxbrowsermodal-filter-select"
+                  >
+                    <option value="all">Any</option>
+                    <option value="landscape">Landscape</option>
+                    <option value="portrait">Portrait</option>
+                    <option value="square">Square</option>
+                  </select>
+                )}
+                {activeTab !== 'effects' && (
+                  <button type="submit" className="vfxbrowsermodal-filter-btn">
                     Search
                   </button>
                 )}
@@ -437,7 +470,9 @@ export function VFXBrowserModal({
                       <PreviewBox
                         cssFilter={(selectedEffect.raw as VisualEffect)?.cssFilter}
                         className={`vfxbrowsermodal-style-47 preview-box ${
-                          selectedEffect.type === 'transition' ? 'transition-anim' : ''
+                          selectedEffect.type === 'transition'
+                            ? `tx-${(selectedEffect.raw as VisualEffect)?.glTransitionId || 'fade'}`
+                            : ''
                         }`}
                       />
                     </>
@@ -471,7 +506,7 @@ export function VFXBrowserModal({
                     Cancel
                   </button>
                   <button onClick={handleAdd} className="vfxbrowsermodal-style-53">
-                    <Plus size={16} /> Add to Timeline
+                    <Plus size={16} /> Add to Library
                   </button>
                 </div>
               </div>
