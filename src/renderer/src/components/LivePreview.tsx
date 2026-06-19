@@ -2,15 +2,19 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type */
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { useProjectStore, Clip, MediaItem } from '../store/projectStore'
+import { usePlaybackStore } from '../store/playbackStore'
 import { calculateKenBurnsTransform } from '../lib/kenBurns'
-import { Play, Pause, Square, SkipBack, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
+
 import './LivePreview.css'
+import { LivePreviewTransport } from './LivePreviewTransport'
 
 // --- Helper ---
 const getMediaUrl = (path: string) => {
   if (!path) return ''
   if (path.startsWith('http') || path.startsWith('data:') || path.startsWith('file://')) return path
-  return `file:///${path.replace(/\\/g, '/')}`
+  return path.startsWith('blob:') || path.startsWith('http:')
+    ? path
+    : `file:///${path.replace(/\\/g, '/')}`
 }
 
 // --- Global Audio Context ---
@@ -99,33 +103,42 @@ const AudioPlayer = ({ clip }: { clip: Clip }) => {
 
   useEffect(() => {
     // Initial sync
-    const state = useProjectStore.getState()
     if (audioRef.current) {
       const playbackRate = clip.audioConfig?.playbackRate || 1
-      const localTime = clip.sourceOffset + (state.playhead - clip.startTime) * playbackRate
+      let localTime =
+        clip.sourceOffset + (usePlaybackStore.getState().playhead - clip.startTime) * playbackRate
+      if (audioRef.current.duration > 0) {
+        localTime = localTime % audioRef.current.duration
+      }
       const isActive =
-        state.playhead >= clip.startTime && state.playhead < clip.startTime + clip.duration
+        usePlaybackStore.getState().playhead >= clip.startTime &&
+        usePlaybackStore.getState().playhead < clip.startTime + clip.duration
       if (isActive) {
         audioRef.current.currentTime = localTime
         audioRef.current.playbackRate = playbackRate
-        audioRef.current.preservesPitch = true
+        ;(audioRef.current as any).preservesPitch = true
       }
     }
 
-    return useProjectStore.subscribe((state, prevState) => {
+    return usePlaybackStore.subscribe((state, prevState) => {
       if (!audioRef.current || !ctxRef.current) return
 
       const playbackRate = clip.audioConfig?.playbackRate || 1
-      const localTime = clip.sourceOffset + (state.playhead - clip.startTime) * playbackRate
+      let localTime =
+        clip.sourceOffset + (usePlaybackStore.getState().playhead - clip.startTime) * playbackRate
+      if (audioRef.current.duration > 0) {
+        localTime = localTime % audioRef.current.duration
+      }
       const isActive =
-        state.playhead >= clip.startTime && state.playhead < clip.startTime + clip.duration
+        usePlaybackStore.getState().playhead >= clip.startTime &&
+        usePlaybackStore.getState().playhead < clip.startTime + clip.duration
 
       if (isActive) {
         if (audioRef.current.playbackRate !== playbackRate) {
           audioRef.current.playbackRate = playbackRate
         }
-        if (audioRef.current.preservesPitch !== true) {
-          audioRef.current.preservesPitch = true
+        if ((audioRef.current as any).preservesPitch !== true) {
+          ;(audioRef.current as any).preservesPitch = true
         }
         // Audio Processing Updates
         if (
@@ -222,7 +235,13 @@ const AudioPlayer = ({ clip }: { clip: Clip }) => {
   if (!media) return null
   // crossOrigin="anonymous" is required for MediaElementAudioSourceNode
   return (
-    <audio ref={audioRef} src={getMediaUrl(media.path)} preload="auto" crossOrigin="anonymous" />
+    <audio
+      ref={audioRef}
+      src={getMediaUrl(media.path)}
+      preload="auto"
+      crossOrigin="anonymous"
+      loop
+    />
   )
 }
 
@@ -246,7 +265,7 @@ const VideoPlayer = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isBuffering, setIsBuffering] = useState(() => {
-    const p = useProjectStore.getState().playhead
+    const p = usePlaybackStore.getState().playhead
     return p >= clip.startTime - 2 && p < clip.startTime + (clip.duration || 5) + 2
   })
 
@@ -256,19 +275,23 @@ const VideoPlayer = ({
       videoRef.current.style.zIndex = zIndex.toString()
       const targetName = (clip.name || media?.name || '').toLowerCase()
       const isExplicitOverlay = targetName.includes('overlay') || targetName.includes('screen')
-      videoRef.current.style.mixBlendMode =
-        isExplicitOverlay || !isMainTrack ? 'screen' : 'normal'
+      videoRef.current.style.mixBlendMode = isExplicitOverlay || !isMainTrack ? 'screen' : 'normal'
     }
   }, [transform, zIndex, clip, media, isBuffering, isMainTrack])
 
   useEffect(() => {
     // Initial sync
-    const state = useProjectStore.getState()
     if (videoRef.current) {
       const playbackRate = clip.audioConfig?.playbackRate || 1
-      const localTime = (clip.sourceOffset || 0) + (state.playhead - clip.startTime) * playbackRate
+      let localTime =
+        (clip.sourceOffset || 0) +
+        (usePlaybackStore.getState().playhead - clip.startTime) * playbackRate
+      if (videoRef.current.duration > 0) {
+        localTime = localTime % videoRef.current.duration
+      }
       const isActive =
-        state.playhead >= clip.startTime && state.playhead < clip.startTime + clip.duration
+        usePlaybackStore.getState().playhead >= clip.startTime &&
+        usePlaybackStore.getState().playhead < clip.startTime + clip.duration
       videoRef.current.style.visibility = isActive ? 'visible' : 'hidden'
       if (isActive) {
         videoRef.current.currentTime = localTime
@@ -277,8 +300,8 @@ const VideoPlayer = ({
 
       // Initial src buffer sync
       const isBuffering =
-        state.playhead >= clip.startTime - 2 &&
-        state.playhead < clip.startTime + (clip.duration || 5) + 2
+        usePlaybackStore.getState().playhead >= clip.startTime - 2 &&
+        usePlaybackStore.getState().playhead < clip.startTime + (clip.duration || 5) + 2
 
       if (isBuffering && !videoRef.current.hasAttribute('src')) {
         videoRef.current.src = getMediaUrl(media.path || media.thumbnail || '')
@@ -286,7 +309,7 @@ const VideoPlayer = ({
       }
     }
 
-    return useProjectStore.subscribe((state, prevState) => {
+    return usePlaybackStore.subscribe((state, prevState) => {
       const newIsBuffering =
         state.playhead >= clip.startTime - 2 &&
         state.playhead < clip.startTime + (clip.duration || 5) + 2
@@ -296,10 +319,16 @@ const VideoPlayer = ({
       if (!videoRef.current) return
 
       const playbackRate = clip.audioConfig?.playbackRate || 1
-      const localTime = (clip.sourceOffset || 0) + (state.playhead - clip.startTime) * playbackRate
+      let localTime =
+        (clip.sourceOffset || 0) +
+        (usePlaybackStore.getState().playhead - clip.startTime) * playbackRate
+      if (videoRef.current.duration > 0) {
+        localTime = localTime % videoRef.current.duration
+      }
 
       const isActive =
-        state.playhead >= clip.startTime && state.playhead < clip.startTime + clip.duration
+        usePlaybackStore.getState().playhead >= clip.startTime &&
+        usePlaybackStore.getState().playhead < clip.startTime + clip.duration
 
       if (isActive) {
         if (videoRef.current.playbackRate !== playbackRate) {
@@ -355,7 +384,7 @@ const VideoPlayer = ({
     <video
       ref={videoRef}
       src={getMediaUrl(media.path || media.thumbnail || '')}
-      className={`${className || ''} pointer-events-none`}
+      className={`${className || ''}`}
       data-clip-id={dataClipId}
       playsInline
       muted
@@ -394,17 +423,18 @@ const ImagePlayer = ({
   }, [transform, zIndex, clip, media])
 
   useEffect(() => {
-    const state = useProjectStore.getState()
     if (imgRef.current) {
       const isActive =
-        state.playhead >= clip.startTime && state.playhead < clip.startTime + (clip.duration || 5)
+        usePlaybackStore.getState().playhead >= clip.startTime &&
+        usePlaybackStore.getState().playhead < clip.startTime + (clip.duration || 5)
       imgRef.current.style.visibility = isActive ? 'visible' : 'hidden'
     }
 
-    return useProjectStore.subscribe((state) => {
+    return usePlaybackStore.subscribe((state) => {
       if (!imgRef.current) return
       const isActive =
-        state.playhead >= clip.startTime && state.playhead < clip.startTime + (clip.duration || 5)
+        usePlaybackStore.getState().playhead >= clip.startTime &&
+        usePlaybackStore.getState().playhead < clip.startTime + (clip.duration || 5)
 
       if (isActive) {
         let currentOpacity = 1
@@ -427,7 +457,7 @@ const ImagePlayer = ({
     <img
       ref={imgRef}
       src={getMediaUrl(media.path || media.thumbnail || '')}
-      className={`${className || ''} pointer-events-none`}
+      className={`${className || ''}`}
       data-clip-id={dataClipId}
       draggable={false}
       alt="Media"
@@ -450,6 +480,89 @@ const EffectOverlay = ({ clip, zIndex }: { clip: Clip; zIndex: number }) => {
   }, [clip.effect?.cssFilter, zIndex])
 
   return <div ref={ref} className="live-preview-effect-overlay" data-effect-id={clip.id} />
+}
+
+// --- Text Player Component ---
+const TextPlayer = ({
+  clip,
+  zIndex,
+  className,
+  dataClipId,
+  transform
+}: {
+  clip: Clip
+  zIndex: number
+  className?: string
+  dataClipId?: string
+  transform?: string
+}) => {
+  const textRef = useRef<HTMLDivElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const textProps = clip.textProperties
+
+  useEffect(() => {
+    const el = textRef.current
+    const wrapperEl = wrapperRef.current
+
+    if (wrapperEl) {
+      wrapperEl.style.zIndex = zIndex.toString()
+      if (transform) {
+        wrapperEl.style.transform = transform
+      } else {
+        wrapperEl.style.transform = 'none'
+      }
+    }
+
+    if (el && textProps) {
+      el.style.fontFamily = textProps.fontFamily
+      el.style.fontSize = `${textProps.fontSize}px`
+      el.style.color = textProps.color
+      el.style.fontWeight = textProps.fontWeight.toString()
+      el.style.textAlign = textProps.textAlign || 'center'
+      el.style.textShadow = textProps.dropShadow?.enabled
+        ? `${textProps.dropShadow.offsetX}px ${textProps.dropShadow.offsetY}px ${textProps.dropShadow.blur}px rgba(0,0,0,0.8)`
+        : 'none'
+    }
+  }, [transform, zIndex, textProps])
+
+  useEffect(() => {
+    return usePlaybackStore.subscribe((state) => {
+      if (textRef.current) {
+        const isActive =
+          state.playhead >= clip.startTime &&
+          state.playhead <= clip.startTime + (clip.duration || 5)
+
+        if (isActive) {
+          let currentOpacity = 1
+          const clipTime = state.playhead - clip.startTime
+          if (clip.fadeIn && clipTime < clip.fadeIn) {
+            currentOpacity = clipTime / clip.fadeIn
+          }
+          if (clip.fadeOut && clipTime > (clip.duration || 5) - clip.fadeOut) {
+            currentOpacity = ((clip.duration || 5) - clipTime) / clip.fadeOut
+          }
+          textRef.current.style.opacity = currentOpacity.toString()
+          textRef.current.style.visibility = 'visible'
+        } else {
+          textRef.current.style.visibility = 'hidden'
+        }
+      }
+    })
+  }, [clip])
+
+  if (!textProps) return null
+
+  return (
+    <div
+      ref={wrapperRef}
+      className={`${className || ''} absolute inset-0 live-preview-text-wrapper`}
+      data-clip-id={dataClipId}
+    >
+      <div ref={textRef} className="live-preview-text-content m-0 p-0">
+        {textProps.content}
+      </div>
+    </div>
+  )
 }
 
 // --- Flatten Compound Clips for Rendering ---
@@ -500,10 +613,10 @@ const flattenClips = (clips: Clip[], mediaItems: any[]): Clip[] => {
 
 export function LivePreview(): React.ReactElement | null {
   // Only subscribe to the exact state we need for RENDER.
-  const setPlayhead = useProjectStore((s) => s.setPlayhead)
+  const setPlayhead = usePlaybackStore((s) => s.setPlayhead)
   const updateKenBurnsKeyframe = useProjectStore((s) => s.updateKenBurnsKeyframe)
 
-  const isPlaying = useProjectStore((s) => s.isPlaying)
+  const isPlaying = usePlaybackStore((s) => s.isPlaying)
   const tracks = useProjectStore((s) => s.tracks)
   const rawClips = useProjectStore((s) => s.clips)
   const mediaItems = useProjectStore((s) => s.mediaLibrary)
@@ -511,20 +624,16 @@ export function LivePreview(): React.ReactElement | null {
   const activeKeyframeId = useProjectStore((s) => s.activeKeyframeId)
   const selectedClipId = useProjectStore((s) => s.selectedClipId)
   const mediaLibrary = useProjectStore((s) => s.mediaLibrary)
-  const targetDuration = useProjectStore((s) => s.targetDuration)
-  const setTargetDuration = useProjectStore((s) => s.setTargetDuration)
-  const autoAdjustTargetDuration = useProjectStore((s) => s.autoAdjustTargetDuration)
-  const setAutoAdjustTargetDuration = useProjectStore((s) => s.setAutoAdjustTargetDuration)
   const isKenBurnsLocked = useProjectStore((s) => s.isKenBurnsLocked)
-  const setKenBurnsLocked = useProjectStore((s) => s.setKenBurnsLocked)
-  const setIsPlaying = useProjectStore((s) => s.setIsPlaying)
 
-  const audioClips = allClips.filter(
-    (c) => tracks.find((t) => t.id === c.trackId)?.type === 'audio'
-  )
-  const visualClips = allClips.filter(
-    (c) => !c.effect && tracks.find((t) => t.id === c.trackId)?.type === 'video'
-  )
+  const audioClips = allClips?.filter((c) => {
+    const type = tracks.find((t) => t.id === c.trackId)?.type
+    return type === 'audio' || type === 'video'
+  })
+  const visualClips = allClips?.filter((c) => {
+    const type = tracks.find((t) => t.id === c.trackId)?.type
+    return !c.effect && (type === 'video' || type === 'text')
+  })
 
   // Higher track index means bottom layer, so reverse sort by index to render bottom-to-top
   const sortedVisualClips = [...visualClips].sort((a, b) => {
@@ -550,7 +659,7 @@ export function LivePreview(): React.ReactElement | null {
 
   const updateFrameStyles = (state: ReturnType<typeof useProjectStore.getState>, time: number) => {
     if (!canvasRef.current) return
-    const currentActiveClips = state.clips.filter(
+    const currentActiveClips = state?.clips?.filter(
       (c) => time >= c.startTime && time < c.startTime + c.duration
     )
 
@@ -568,8 +677,8 @@ export function LivePreview(): React.ReactElement | null {
 
     // Effects
     canvasRef.current.style.filter = 'none'
-    state.clips
-      .filter((c) => c.effect)
+    state?.clips
+      ?.filter((c) => c.effect)
       .forEach((clip) => {
         const el = canvasRef.current!.querySelector(`[data-effect-id="${clip.id}"]`) as HTMLElement
         if (el) {
@@ -598,7 +707,7 @@ export function LivePreview(): React.ReactElement | null {
       const state = useProjectStore.getState()
       const deltaTime = (time - previousTimeRef.current) / 1000
 
-      const newTime = state.playhead + deltaTime
+      const newTime = usePlaybackStore.getState().playhead + deltaTime
       const maxTime =
         state.clips.length > 0 ? Math.max(...state.clips.map((c) => c.startTime + c.duration)) : 5
       const finalTime = newTime > maxTime + 1 ? 0 : newTime
@@ -624,15 +733,15 @@ export function LivePreview(): React.ReactElement | null {
   }, [isPlaying])
 
   useEffect(() => {
-    return useProjectStore.subscribe((state, prevState) => {
+    return usePlaybackStore.subscribe((state, prevState) => {
       if (!state.isPlaying && state.playhead !== prevState.playhead) {
-        updateFrameStyles(state, state.playhead)
+        updateFrameStyles(useProjectStore.getState(), state.playhead)
       }
     })
   }, [])
 
   const localClipTime = draggingClip
-    ? useProjectStore.getState().playhead - draggingClip.startTime
+    ? usePlaybackStore.getState().playhead - draggingClip.startTime
     : 0
   const getEditingKeyframe = () => {
     if (!draggingClip || !effect) return null
@@ -645,39 +754,136 @@ export function LivePreview(): React.ReactElement | null {
     )[0]
   }
 
-  const handleWheel = (e: React.WheelEvent) => {
-    if (isKenBurnsLocked || !draggingClip || isPlaying) return
-    const kf = getEditingKeyframe()
-    if (!kf) return
+  const handleWheelRef = useRef<(e: WheelEvent) => void>(undefined)
+  useEffect(() => {
+    handleWheelRef.current = (e: WheelEvent) => {
+      if (isKenBurnsLocked || !draggingClip || isPlaying) return
+      const kf = getEditingKeyframe()
+      if (!kf) return
 
-    e.preventDefault()
-    const zoomDelta = e.deltaY * -0.005
-    const newZoom = Math.max(
-      effect?.constrainToFrame !== false ? 1 : 0.1,
-      Math.min(5, kf.zoom + zoomDelta)
-    )
+      e.preventDefault()
+      const zoomDelta = Math.sign(e.deltaY) * -0.1
+      const newZoom = Math.max(
+        effect?.constrainToFrame !== false ? 1 : 0.1,
+        Math.min(5, kf.zoom + zoomDelta)
+      )
 
-    updateKenBurnsKeyframe(draggingClip.id, kf.id, { zoom: newZoom })
-    if (!activeKeyframeId) useProjectStore.getState().setActiveKeyframeId(kf.id)
-  }
+      updateKenBurnsKeyframe(draggingClip.id, kf.id, { zoom: newZoom })
+      if (!activeKeyframeId) useProjectStore.getState().setActiveKeyframeId(kf.id)
+    }
+  })
+
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    const listener = (e: WheelEvent) => {
+      if (handleWheelRef.current) handleWheelRef.current(e)
+    }
+    el.addEventListener('wheel', listener, { passive: false })
+    return () => el.removeEventListener('wheel', listener)
+  }, [])
+
+  // Fix stale closures during rapid drag events
+  const activeDragClipRef = useRef<any>(null)
+  const activeEffectRef = useRef<any>(null)
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (isKenBurnsLocked || !draggingClip || isPlaying) return
-    const kf = getEditingKeyframe()
-    if (!kf) return
+    if (isPlaying) return
 
-    useProjectStore.getState().saveHistory()
+    // Implement Click-To-Select logic!
+    let targetClipId: string | null = null
 
+    const targetElement = (e.target as HTMLElement).closest('[data-clip-id]') as HTMLElement
+    if (targetElement) {
+      targetClipId = targetElement.getAttribute('data-clip-id')
+    }
+
+    let newDraggingClip = draggingClip
+    if (targetClipId) {
+      useProjectStore.getState().setSelectedClipId(targetClipId)
+      newDraggingClip = sortedVisualClips.find((c) => c.id === targetClipId) || newDraggingClip
+    }
+
+    if (isKenBurnsLocked || !newDraggingClip) return
+
+    let kf = getEditingKeyframe()
+    // If the user clicked a different clip, getEditingKeyframe will have returned the old clip's keyframe
+    // We need to re-evaluate it for the new clip
+    if (targetClipId && targetClipId !== draggingClip?.id) {
+      const effect = newDraggingClip.kenBurnsEffect
+      const localTime = currentPlayhead - newDraggingClip.startTime
+      kf = effect?.keyframes.find((k) => k.id === activeKeyframeId) || null
+      if (!kf && effect?.keyframes.length) {
+        kf = [...effect.keyframes].sort(
+          (a, b) => Math.abs(a.time - localTime) - Math.abs(b.time - localTime)
+        )[0]
+      }
+    }
+
+    const store = useProjectStore.getState()
+
+    if (!kf) {
+      // Auto-create a Ken Burns effect and keyframe so the user can drag immediately!
+      const newKfId = `kb-${crypto.randomUUID()}`
+      const newEffect = newDraggingClip.kenBurnsEffect || {
+        id: `kb-${crypto.randomUUID()}`,
+        mediaId: newDraggingClip.mediaId,
+        easing: 'ease-in-out',
+        constrainToFrame: newDraggingClip.trackId?.startsWith('v') ? true : false,
+        keyframes: []
+      }
+      const newKf = {
+        id: newKfId,
+        time: newDraggingClip ? currentPlayhead - newDraggingClip.startTime : 0,
+        x: 0,
+        y: 0,
+        zoom: 1,
+        rotation: 0
+      }
+      if (!newDraggingClip.kenBurnsEffect) {
+        store.setKenBurnsEffect(newDraggingClip.id, newEffect)
+      }
+      store.addKenBurnsKeyframe(newDraggingClip.id, newKf)
+      store.setActiveKeyframeId(newKfId)
+      kf = newKf
+      activeEffectRef.current = newEffect
+    } else {
+      activeEffectRef.current = newDraggingClip.kenBurnsEffect
+    }
+
+    store.saveHistory()
+
+    activeDragClipRef.current = newDraggingClip
     setIsDraggingCanvas(true)
     dragStartPosRef.current = { x: e.clientX, y: e.clientY }
     originalKfPosRef.current = { x: kf.x, y: kf.y }
     currentDragPosRef.current = { x: kf.x, y: kf.y }
-    if (!activeKeyframeId) useProjectStore.getState().setActiveKeyframeId(kf.id)
+    if (!activeKeyframeId) store.setActiveKeyframeId(kf.id)
   }
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isKenBurnsLocked || !isDraggingCanvas || !draggingClip) return
-    const kf = getEditingKeyframe()
+    const currentDragClip = activeDragClipRef.current || draggingClip
+    if (isKenBurnsLocked || !isDraggingCanvas || !currentDragClip) return
+
+    let kf = getEditingKeyframe()
+
+    // If re-render hasn't happened yet, calculate using the ref clip
+    if (!kf && activeDragClipRef.current) {
+      const effect = activeEffectRef.current
+      if (effect) {
+        const localTime = currentPlayhead - currentDragClip.startTime
+        kf =
+          effect.keyframes.find((k: any) => k.id === useProjectStore.getState().activeKeyframeId) ||
+          null
+        if (!kf && effect.keyframes.length) {
+          kf = [...effect.keyframes].sort(
+            (a: any, b: any) => Math.abs(a.time - localTime) - Math.abs(b.time - localTime)
+          )[0]
+        }
+      }
+    }
+
     if (!kf) return
 
     const dx = e.clientX - dragStartPosRef.current.x
@@ -687,7 +893,10 @@ export function LivePreview(): React.ReactElement | null {
     let newX = originalKfPosRef.current.x + dx * sensitivity
     let newY = originalKfPosRef.current.y + dy * sensitivity
 
-    const maxPan = effect?.constrainToFrame !== false ? ((kf.zoom - 1) / (2 * kf.zoom)) * 100 : 200
+    const currentEffect = activeEffectRef.current || effect
+    const isText = !!currentDragClip.textProperties
+    const constrain = isText ? false : currentEffect?.constrainToFrame !== false
+    const maxPan = constrain ? ((kf.zoom - 1) / (2 * kf.zoom)) * 100 : 200
     newX = Math.max(-maxPan, Math.min(maxPan, newX))
     newY = Math.max(-maxPan, Math.min(maxPan, newY))
 
@@ -695,17 +904,26 @@ export function LivePreview(): React.ReactElement | null {
 
     if (canvasRef.current) {
       const el = canvasRef.current.querySelector(
-        `[data-clip-id="${draggingClip.id}"]`
+        `[data-clip-id="${currentDragClip.id}"]`
       ) as HTMLElement
-      if (el) el.style.transform = `scale(${kf.zoom}) translate(${newX}%, ${newY}%)`
+      if (el) {
+        el.style.transform = `scale(${kf.zoom}) translate(${newX}%, ${newY}%)`
+      }
     }
   }
 
   const handleMouseUp = () => {
-    if (isDraggingCanvas && draggingClip) {
-      const kf = getEditingKeyframe()
+    const currentDragClip = activeDragClipRef.current || draggingClip
+    if (isDraggingCanvas && currentDragClip) {
+      let kf = getEditingKeyframe()
+      if (!kf && activeEffectRef.current) {
+        kf =
+          activeEffectRef.current.keyframes.find(
+            (k: any) => k.id === useProjectStore.getState().activeKeyframeId
+          ) || null
+      }
       if (kf) {
-        updateKenBurnsKeyframe(draggingClip.id, kf.id, {
+        useProjectStore.getState().updateKenBurnsKeyframe(currentDragClip.id, kf.id, {
           x: currentDragPosRef.current.x,
           y: currentDragPosRef.current.y
         })
@@ -714,7 +932,7 @@ export function LivePreview(): React.ReactElement | null {
     setIsDraggingCanvas(false)
   }
 
-  const currentPlayhead = useProjectStore.getState().playhead
+  const currentPlayhead = usePlaybackStore.getState().playhead
 
   return (
     <div className="panel panel-c-preview live-preview-container">
@@ -726,7 +944,7 @@ export function LivePreview(): React.ReactElement | null {
       {/* Canvas Area */}
       <div
         className="live-preview-canvas-wrapper"
-        onWheel={handleWheel}
+        ref={wrapperRef}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -741,9 +959,6 @@ export function LivePreview(): React.ReactElement | null {
         >
           {sortedVisualClips.length > 0 ? (
             sortedVisualClips.map((clip, i) => {
-              const media = mediaLibrary.find((m) => m.id === clip.mediaId)
-              if (!media) return null
-
               let t = { x: 0, y: 0, zoom: 1 }
               if (clip.kenBurnsEffect) {
                 const kf =
@@ -759,6 +974,23 @@ export function LivePreview(): React.ReactElement | null {
               }
 
               const transformStr = `scale(${t.zoom}) translate(${t.x}%, ${t.y}%)`
+
+              const track = tracks.find((track) => track.id === clip.trackId)
+              if (track?.type === 'text') {
+                return (
+                  <TextPlayer
+                    key={clip.id}
+                    clip={clip}
+                    zIndex={i}
+                    className="live-preview-media-item"
+                    dataClipId={clip.id}
+                    transform={transformStr}
+                  />
+                )
+              }
+
+              const media = mediaLibrary.find((m) => m.id === clip.mediaId)
+              if (!media) return null
 
               const isMainTrack =
                 tracks.findIndex((t) => t.id === clip.trackId) === tracks.length - 1
@@ -796,7 +1028,7 @@ export function LivePreview(): React.ReactElement | null {
 
           {/* Effect Overlays */}
           {allClips
-            .filter((clip) => clip.effect)
+            ?.filter((clip) => clip.effect)
             .map((clip, i) => (
               <EffectOverlay key={clip.id} clip={clip} zIndex={100 + i} />
             ))}
@@ -804,158 +1036,7 @@ export function LivePreview(): React.ReactElement | null {
       </div>
 
       {/* Transport Controls */}
-      <div className="live-preview-transport">
-        {/* Target Duration Input */}
-        <div className="live-preview-target-dur">
-          <label className="live-preview-target-dur-label" title="Target Project Duration">
-            Target:
-          </label>
-          <input
-            type="number"
-            className="hide-spinners live-preview-time-input"
-            title="Target Duration Minutes"
-            min="0"
-            step="1"
-            value={targetDuration !== null ? Math.floor(targetDuration / 60) || '' : ''}
-            placeholder="Min"
-            onChange={(e) => {
-              const m = Math.max(0, parseInt(e.target.value) || 0)
-              const s = targetDuration !== null ? Math.floor(targetDuration % 60) : 0
-              const total = m * 60 + s
-              setTargetDuration(total <= 0 && e.target.value === '' ? null : total)
-            }}
-          />
-          <span className="live-preview-time-sep">:</span>
-          <input
-            type="number"
-            className="hide-spinners live-preview-time-input"
-            min="0"
-            max="59"
-            step="1"
-            value={
-              targetDuration !== null
-                ? Math.floor(targetDuration % 60) || (targetDuration === 0 ? '0' : '')
-                : ''
-            }
-            title="Target Duration Seconds"
-            placeholder="Sec"
-            onChange={(e) => {
-              const m = targetDuration !== null ? Math.floor(targetDuration / 60) : 0
-              let s = parseInt(e.target.value) || 0
-              s = Math.max(0, Math.min(59, s))
-              const total = m * 60 + s
-              setTargetDuration(total <= 0 && e.target.value === '' && m === 0 ? null : total)
-            }}
-          />
-          <label
-            className="live-preview-lock-label"
-            title="Auto-adjust target duration when clips are resized"
-          >
-            <input
-              type="checkbox"
-              checked={!autoAdjustTargetDuration}
-              onChange={(e) => setAutoAdjustTargetDuration(!e.target.checked)}
-              className="live-preview-lock-input"
-            />
-            Lock Duration
-          </label>
-          <label
-            className="live-preview-lock-label live-preview-lock-kb"
-            title="Lock Ken Burns canvas editing"
-          >
-            <input
-              type="checkbox"
-              checked={isKenBurnsLocked}
-              onChange={(e) => setKenBurnsLocked(e.target.checked)}
-              className="live-preview-lock-input"
-            />
-            Lock KB
-          </label>
-        </div>
-
-        {/* Playback Buttons */}
-        <div className="live-preview-buttons">
-          {selectedClipId && (
-            <button
-              onClick={() => {
-                useProjectStore.getState().removeClip(selectedClipId)
-                useProjectStore.getState().setSelectedClipId(null)
-              }}
-              className="live-preview-btn live-preview-btn-danger"
-              title="Delete Selected Clip"
-            >
-              <Trash2 size={16} />
-            </button>
-          )}
-
-          <div className="live-preview-divider" />
-          <button
-            onClick={() => setPlayhead(0)}
-            className="live-preview-btn"
-            title="Reset to beginning"
-          >
-            <SkipBack size={16} />
-          </button>
-
-          <button
-            onClick={() => setPlayhead((prev) => Math.max(0, prev - 0.1))}
-            className="live-preview-btn"
-            title="Step backward"
-          >
-            <ChevronLeft size={18} />
-          </button>
-
-          <button
-            onClick={() => {
-              setPlayhead(0)
-              setIsPlaying(false)
-            }}
-            className="live-preview-btn"
-            title="Stop"
-          >
-            <Square size={14} fill="currentColor" />
-          </button>
-
-          <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="live-preview-btn-main"
-            title={isPlaying ? 'Pause' : 'Play'}
-          >
-            {isPlaying ? (
-              <Pause size={18} fill="currentColor" />
-            ) : (
-              <Play size={18} fill="currentColor" />
-            )}
-          </button>
-
-          <button
-            onClick={() => setPlayhead((prev) => prev + 0.1)}
-            className="live-preview-btn"
-            title="Step forward"
-          >
-            <ChevronRight size={18} />
-          </button>
-
-          <PlayheadTime />
-        </div>
-      </div>
+      <LivePreviewTransport />
     </div>
   )
-}
-
-const PlayheadTime = () => {
-  const playhead = useProjectStore((s) => s.playhead)
-  const formatTime = (timeInSeconds: number) => {
-    const mins = Math.floor(timeInSeconds / 60)
-      .toString()
-      .padStart(2, '0')
-    const secs = Math.floor(timeInSeconds % 60)
-      .toString()
-      .padStart(2, '0')
-    const ms = Math.floor((timeInSeconds % 1) * 100)
-      .toString()
-      .padStart(2, '0')
-    return `00:${mins}:${secs}:${ms}`
-  }
-  return <div className="live-preview-time-display">{formatTime(playhead)}</div>
 }

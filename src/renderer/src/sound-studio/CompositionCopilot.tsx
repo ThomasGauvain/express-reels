@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Send, Bot } from 'lucide-react'
-import { GoogleGenAI } from '@google/genai'
+import { GoogleGenAI, Type, Schema } from '@google/genai'
+import { generateContentWithRetry } from '../lib/gemini'
 import {
   useSoundStudioStore,
   BUILT_IN_INSTRUMENTS,
@@ -15,29 +16,7 @@ function buildSystemPrompt(): string {
 
   return `You are an expert music composition AI assistant inside a professional audio app called Sound Studio (part of Express Reels).
 
-Your job is to help the user compose music and sound effects. When the user asks you to create or modify a composition, you MUST respond with ONLY a valid JSON object matching this exact schema — no extra text, no markdown, no explanation outside the JSON:
-
-{
-  "bpm": <number, optional>,
-  "beatsPerMeasure": <number, optional>,
-  "totalMeasures": <number, optional>,
-  "tracks": [
-    {
-      "instrumentId": "<one of the IDs below>",
-      "name": "<track name>",
-      "notes": [
-        { "startBeat": <number>, "durationBeats": <number>, "velocity": <0-127>, "pitch": "<optional, e.g. C4>" }
-      ],
-      "effects": {
-        "eq": { "bass": <-12 to 12>, "mid": <-12 to 12>, "treble": <-12 to 12> },
-        "compression": { "threshold": <-60 to 0>, "ratio": <1 to 20> },
-        "gate": { "threshold": <-80 to 0> },
-        "reverb": { "mix": <0 to 1>, "decay": <0.1 to 10> }
-      }
-    }
-  ],
-  "message": "<a short friendly message shown to the user after applying the composition>"
-}
+Your job is to help the user compose music and sound effects.
 
 AVAILABLE INSTRUMENTS (use ONLY these instrumentId values):
 ${instrumentList}
@@ -47,8 +26,80 @@ RULES:
 - Only use instrumentIds from the list above
 - For percussion instruments, omit the "pitch" field
 - For synth/string/wind/midi instruments, include a "pitch" like "C4", "D#3", "Bb2" etc.
-- If the user asks a conversational question (not a composition request), still return valid JSON but with an empty "tracks" array and put your answer in the "message" field
+- If the user asks a conversational question (not a composition request), leave the "tracks" array empty and put your answer in the "message" field
 - Keep note velocities between 60 and 127 for realistic dynamics`
+}
+
+const aiCompositionSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    bpm: { type: Type.NUMBER, description: 'Optional BPM' },
+    beatsPerMeasure: { type: Type.NUMBER, description: 'Optional beats per measure' },
+    totalMeasures: { type: Type.NUMBER, description: 'Optional total measures' },
+    tracks: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          instrumentId: { type: Type.STRING, description: 'One of the provided instrument IDs' },
+          name: { type: Type.STRING, description: 'Track name' },
+          notes: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                startBeat: { type: Type.NUMBER },
+                durationBeats: { type: Type.NUMBER },
+                velocity: { type: Type.NUMBER, description: '0-127' },
+                pitch: { type: Type.STRING, description: 'Optional, e.g. C4' }
+              },
+              required: ['startBeat', 'durationBeats', 'velocity']
+            }
+          },
+          effects: {
+            type: Type.OBJECT,
+            properties: {
+              eq: {
+                type: Type.OBJECT,
+                properties: {
+                  bass: { type: Type.NUMBER, description: '-12 to 12' },
+                  mid: { type: Type.NUMBER, description: '-12 to 12' },
+                  treble: { type: Type.NUMBER, description: '-12 to 12' }
+                },
+                required: ['bass', 'mid', 'treble']
+              },
+              compression: {
+                type: Type.OBJECT,
+                properties: {
+                  threshold: { type: Type.NUMBER, description: '-60 to 0' },
+                  ratio: { type: Type.NUMBER, description: '1 to 20' }
+                },
+                required: ['threshold', 'ratio']
+              },
+              gate: {
+                type: Type.OBJECT,
+                properties: {
+                  threshold: { type: Type.NUMBER, description: '-80 to 0' }
+                },
+                required: ['threshold']
+              },
+              reverb: {
+                type: Type.OBJECT,
+                properties: {
+                  mix: { type: Type.NUMBER, description: '0 to 1' },
+                  decay: { type: Type.NUMBER, description: '0.1 to 10' }
+                },
+                required: ['mix', 'decay']
+              }
+            }
+          }
+        },
+        required: ['instrumentId', 'name', 'notes']
+      }
+    },
+    message: { type: Type.STRING, description: 'A short friendly message shown to the user' }
+  },
+  required: ['tracks', 'message']
 }
 
 export function CompositionCopilot({
@@ -111,12 +162,13 @@ export function CompositionCopilot({
 
       const userMessage = `CURRENT SESSION STATE:\n${JSON.stringify(context, null, 2)}\n\nUSER REQUEST: ${text}`
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+      const response = await generateContentWithRetry(ai, {
+        model: 'gemini-3.5-flash',
         contents: [{ role: 'user', parts: [{ text: userMessage }] }],
         config: {
           systemInstruction: buildSystemPrompt(),
-          responseMimeType: 'application/json'
+          responseMimeType: 'application/json',
+          responseSchema: aiCompositionSchema
         }
       })
 

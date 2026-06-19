@@ -1,5 +1,6 @@
 import './Timeline.css'
 import React, { useRef, useState, useEffect } from 'react'
+import { usePlaybackStore } from '../store/playbackStore'
 import { useProjectStore, Clip } from '../store/projectStore'
 import { AudioWaveform } from './AudioWaveform'
 import { calculateKenBurnsTransform } from '../lib/kenBurns'
@@ -8,7 +9,9 @@ import { useShallow } from 'zustand/react/shallow'
 const getMediaUrl = (path: string): string => {
   if (!path) return ''
   if (path.startsWith('http') || path.startsWith('data:') || path.startsWith('file://')) return path
-  return `file:///${path.replace(/\\/g, '/')}`
+  return path.startsWith('blob:') || path.startsWith('http:')
+    ? path
+    : `file:///${path.replace(/\\/g, '/')}`
 }
 
 // ---------------------------------------------------------------------------
@@ -153,11 +156,13 @@ function KeyframeMarker({
 function PositionedOverlay({
   left,
   width,
+  tracksHeight,
   className,
   children
 }: {
   left: number
   width?: number
+  tracksHeight?: number
   className: string
   children?: React.ReactNode
 }): React.ReactElement {
@@ -167,7 +172,11 @@ function PositionedOverlay({
     if (!el) return
     el.style.left = `${left}px`
     if (width !== undefined) el.style.width = `${width}px`
-  }, [left, width])
+    if (tracksHeight !== undefined) {
+      el.style.bottom = 'auto'
+      el.style.minHeight = `max(100%, ${tracksHeight}px)`
+    }
+  }, [left, width, tracksHeight])
   return (
     <div ref={ref} className={className}>
       {children}
@@ -201,6 +210,60 @@ function ContextMenuOverlay({
   )
 }
 
+/** A video thumbnail that automatically tiles horizontally when extended */
+function LoopingThumbnail({
+  thumbnailUrl,
+  mediaDuration,
+  sourceOffset,
+  pixelsPerSecond,
+  className
+}: {
+  thumbnailUrl: string
+  mediaDuration?: number
+  sourceOffset: number
+  pixelsPerSecond: number
+  className: string
+}): React.ReactElement {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.backgroundImage = `url(${thumbnailUrl})`
+    el.style.backgroundRepeat = 'repeat-x'
+    el.style.backgroundSize = mediaDuration ? `${mediaDuration * pixelsPerSecond}px 100%` : 'cover'
+    el.style.backgroundPosition = `${-sourceOffset * pixelsPerSecond}px 0`
+    el.style.width = '100%'
+  }, [thumbnailUrl, mediaDuration, sourceOffset, pixelsPerSecond])
+  return <div ref={ref} className={className} />
+}
+
+/** Visual dotted lines indicating where a clip loops */
+function LoopingBoundaryOverlay({
+  mediaDuration,
+  sourceOffset,
+  pixelsPerSecond
+}: {
+  mediaDuration: number
+  sourceOffset: number
+  pixelsPerSecond: number
+}): React.ReactElement {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.position = 'absolute'
+    el.style.top = '0px'
+    el.style.bottom = '0px'
+    el.style.left = '0px'
+    el.style.right = '0px'
+    el.style.pointerEvents = 'none'
+    el.style.zIndex = '10'
+    el.style.backgroundImage = `repeating-linear-gradient(to right, transparent, transparent calc(${mediaDuration * pixelsPerSecond}px - 2px), rgba(255, 255, 255, 0.4) calc(${mediaDuration * pixelsPerSecond}px - 2px), rgba(255, 255, 255, 0.4) ${mediaDuration * pixelsPerSecond}px)`
+    el.style.backgroundPosition = `${-sourceOffset * pixelsPerSecond}px 0`
+  }, [mediaDuration, sourceOffset, pixelsPerSecond])
+  return <div ref={ref} />
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -209,7 +272,6 @@ export function Timeline(): React.ReactElement {
   const {
     tracks,
     clips,
-    setPlayhead,
     activeTool,
     mediaLibrary,
     addClip,
@@ -227,7 +289,6 @@ export function Timeline(): React.ReactElement {
     useShallow((s) => ({
       tracks: s.tracks,
       clips: s.clips,
-      setPlayhead: s.setPlayhead,
       activeTool: s.activeTool,
       mediaLibrary: s.mediaLibrary,
       addClip: s.addClip,
@@ -243,12 +304,22 @@ export function Timeline(): React.ReactElement {
       setRangeSelectedTracks: s.setRangeSelectedTracks
     }))
   )
+  const setPlayhead = usePlaybackStore((s) => s.setPlayhead)
   const timelineRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const rulerScrollRef = useRef<HTMLDivElement>(null)
   const [hoverTime, setHoverTime] = useState<number | null>(null)
   const [isScrubbing, setIsScrubbing] = useState(false)
   const [pixelsPerSecond, setPixelsPerSecond] = useState(40)
+
+  useEffect(() => {
+    const currentTracks = useProjectStore.getState().tracks
+    if (!currentTracks.some((t) => t.type === 'text')) {
+      useProjectStore.getState().addTrack({ id: 't1', name: 'Text', type: 'text' }, 0)
+    }
+  }, [tracks])
+
+  const tracksHeight = tracks.length * 60 + 90
 
   // Crop tool state
   const [cropDragStart, setCropDragStart] = useState<number | null>(null)
@@ -282,7 +353,7 @@ export function Timeline(): React.ReactElement {
   } | null>(null)
   const [isAltPressed, setIsAltPressed] = useState(false)
   const lastMouseXRef = useRef<number>(0)
-  const [dragAnimal, setDragAnimal] = useState<'turtle' | 'bunny' | null>(null)
+  const [dragAnimal, setDragAnimal] = useState<'clock' | 'bunny' | null>(null)
 
   // Fading clip state
   const [fadingClipId, setFadingClipId] = useState<string | null>(null)
@@ -300,18 +371,35 @@ export function Timeline(): React.ReactElement {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
       if (e.key === 'Alt') setIsAltPressed(true)
+
       const target = e.target as HTMLElement
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+      // If the user is typing in ANY form field, do absolutely nothing
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      ) {
+        // Exception: if it's a range slider or checkbox, we STILL want Ctrl-Z and Delete to work on the app level
         const inputType = (target as HTMLInputElement).type
-        // Only block shortcuts if the user is typing in a text-based field
-        if (inputType === 'text' || inputType === 'number' || target.tagName === 'TEXTAREA') return
+        if (
+          inputType === 'text' ||
+          inputType === 'number' ||
+          inputType === 'password' ||
+          inputType === 'email'
+        ) {
+          return
+        }
       }
-      // Undo / Redo
+
+      // Undo
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         useProjectStore.getState().undo()
         return
       }
+
+      // Redo
       if (
         (e.ctrlKey || e.metaKey) &&
         (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))
@@ -320,15 +408,18 @@ export function Timeline(): React.ReactElement {
         useProjectStore.getState().redo()
         return
       }
+
+      // Delete Clip or Keyframe
       if (
         e.key === 'Delete' ||
         e.key === 'Backspace' ||
-        e.key === 'Del' ||
         e.code === 'Delete' ||
         e.code === 'Backspace'
       ) {
+        e.preventDefault()
         const state = useProjectStore.getState()
         let keyframeDeleted = false
+
         if (state.activeKeyframeId && state.selectedClipId) {
           const clip = state.clips.find((c) => c.id === state.selectedClipId)
           if (clip?.kenBurnsEffect?.keyframes?.find((k) => k.id === state.activeKeyframeId)) {
@@ -343,8 +434,10 @@ export function Timeline(): React.ReactElement {
             keyframeDeleted = true
           }
         }
+
         if (!keyframeDeleted && state.selectedClipId) {
           state.removeClip(state.selectedClipId)
+          state.setSelectedClipId(null)
         }
       }
     }
@@ -400,12 +493,16 @@ export function Timeline(): React.ReactElement {
     const deltaX = currentX - lastMouseXRef.current
     lastMouseXRef.current = currentX
     const time = getTimeFromEvent(e)
-    setHoverTime(time)
+    if (activeTool === 'razor') {
+      setHoverTime(time)
+    } else if (hoverTime !== null) {
+      setHoverTime(null)
+    }
     if (isScrubbing) {
       setPlayhead(time)
       // Pause playback while scrubbing if it was playing
-      if (useProjectStore.getState().isPlaying) {
-        useProjectStore.getState().setIsPlaying(false)
+      if (usePlaybackStore.getState().isPlaying) {
+        usePlaybackStore.getState().setIsPlaying(false)
       }
       return
     }
@@ -453,7 +550,7 @@ export function Timeline(): React.ReactElement {
         }
 
         // Snap to Playhead
-        const playhead = useProjectStore.getState().playhead
+        const playhead = usePlaybackStore.getState().playhead
         trySnap(playhead, newStart)
         trySnap(playhead, newStart + clip.duration)
 
@@ -492,10 +589,10 @@ export function Timeline(): React.ReactElement {
         if (isStretching) {
           if (resizeEdge === 'left') {
             if (deltaX > 0) setDragAnimal('bunny')
-            else if (deltaX < 0) setDragAnimal('turtle')
+            else if (deltaX < 0) setDragAnimal('clock')
           } else {
             if (deltaX < 0) setDragAnimal('bunny')
-            else if (deltaX > 0) setDragAnimal('turtle')
+            else if (deltaX > 0) setDragAnimal('clock')
           }
         } else {
           setDragAnimal(null)
@@ -507,7 +604,7 @@ export function Timeline(): React.ReactElement {
           let snapTarget = newStart
 
           // Check snaps
-          const playhead = useProjectStore.getState().playhead
+          const playhead = usePlaybackStore.getState().playhead
           const s1 = trySnapToPoint(playhead, newStart)
           if (s1 !== null) snapTarget = s1
           clips.forEach((otherClip) => {
@@ -553,7 +650,7 @@ export function Timeline(): React.ReactElement {
           // Changing duration
           let newEnd = time
           let snapTarget = newEnd
-          const playhead = useProjectStore.getState().playhead
+          const playhead = usePlaybackStore.getState().playhead
           const s1 = trySnapToPoint(playhead, newEnd)
           if (s1 !== null) snapTarget = s1
           clips.forEach((otherClip) => {
@@ -620,15 +717,23 @@ export function Timeline(): React.ReactElement {
 
   const handleMouseDown = (e: React.MouseEvent): void => {
     const time = getTimeFromEvent(e)
-    if (activeTool === 'pointer') {
-      // Playhead seeking if clicking empty space or ruler or playhead line
-      const target = e.target as HTMLElement
-      if (
-        (typeof target.className === 'string' && target.className.includes('timeline-bg')) ||
-        target.closest('.ruler-area') ||
+    const target = e.target as HTMLElement
+
+    // Always allow playhead seeking/scrubbing regardless of active tool
+    if (
+      target.closest &&
+      (target.closest('.ruler-area') ||
         target.closest('.playhead-handle') ||
-        target.closest('.playhead-line')
-      ) {
+        target.closest('.playhead-line'))
+    ) {
+      setPlayhead(time)
+      setIsScrubbing(true)
+      return
+    }
+
+    if (activeTool === 'pointer') {
+      // Playhead seeking if clicking empty space
+      if (typeof target.className === 'string' && target.className.includes('timeline-bg')) {
         setPlayhead(time)
         setIsScrubbing(true)
       }
@@ -932,7 +1037,11 @@ export function Timeline(): React.ReactElement {
                 }}
                 className="timeline-style-9"
               >
-                {track.name}
+                <div className="flex items-center justify-between w-full pr-2">
+                  <span>{track.name}</span>
+                  {track.isMuted && <span title="Muted">🔇</span>}
+                  {track.isHidden && <span title="Hidden">🙈</span>}
+                </div>
               </div>
 
               {/* Track Lane */}
@@ -981,7 +1090,7 @@ export function Timeline(): React.ReactElement {
                       end={rangeMarkers.end}
                       pixelsPerSecond={pixelsPerSecond}
                       onDragStart={(e) => {
-                        let masterType: 'video' | 'audio' | 'effect' = 'video'
+                        let masterType: 'video' | 'audio' | 'effect' | 'text' = 'video'
                         const state = useProjectStore.getState()
                         if (state.rangeMasterTrackId) {
                           const mTrack = tracks.find((t) => t.id === state.rangeMasterTrackId)
@@ -1016,12 +1125,20 @@ export function Timeline(): React.ReactElement {
                         backgroundColor={
                           track.type === 'effect'
                             ? '#8b5cf6'
-                            : track.type === 'video'
-                              ? '#3b82f6'
-                              : '#10b981'
+                            : track.type === 'text'
+                              ? '#ec4899'
+                              : track.type === 'video'
+                                ? '#3b82f6'
+                                : '#10b981'
                         }
                         border={isSelected ? '2px solid white' : '1px solid rgba(255,255,255,0.2)'}
-                        opacity={draggingClipId === clip.id ? 0.7 : 1}
+                        opacity={
+                          draggingClipId === clip.id
+                            ? 0.7
+                            : track.isMuted || track.isHidden
+                              ? 0.4
+                              : 1
+                        }
                         cursor={activeTool === 'razor' ? 'crosshair' : 'grab'}
                         className={`timeline-style-11 ${clip.isCollapsed ? 'compound-clip-block' : ''}`}
                         onContextMenu={(e) => {
@@ -1037,23 +1154,29 @@ export function Timeline(): React.ReactElement {
                           if (activeTool === 'range-copy' || activeTool === 'range-cut') {
                             return
                           }
+                          ;(document.activeElement as HTMLElement)?.blur()
                           e.stopPropagation()
                           if (activeTool === 'razor') {
                             splitClip(clip.id, getTimeFromEvent(e))
                           } else if (activeTool === 'pointer') {
                             useProjectStore.getState().saveHistory()
                             useProjectStore.getState().setSelectedClipId(clip.id)
+                            useProjectStore.getState().setSelectedMediaId(null)
+
+                            if (!usePlaybackStore.getState().isPlaying) {
+                              usePlaybackStore.getState().setPlayhead(clip.startTime)
+                            }
                             useProjectStore.getState().setActiveKeyframeId(null)
                             setDraggingClipId(clip.id)
                             setDragOffset(getTimeFromEvent(e) - clip.startTime)
 
                             // Sync playhead so LivePreview shows what we are editing
-                            const currentPlayhead = useProjectStore.getState().playhead
+                            const currentPlayhead = usePlaybackStore.getState().playhead
                             if (
                               currentPlayhead < clip.startTime ||
                               currentPlayhead >= clip.startTime + clip.duration
                             ) {
-                              useProjectStore.getState().setPlayhead(clip.startTime)
+                              usePlaybackStore.getState().setPlayhead(clip.startTime)
                             }
                           }
                         }}
@@ -1099,23 +1222,33 @@ export function Timeline(): React.ReactElement {
                         }}
                       >
                         {media?.thumbnail && track.type === 'video' && (
-                          <img
-                            src={media.thumbnail}
-                            alt="Clip thumbnail"
-                            draggable={false}
+                          <LoopingThumbnail
                             className="timeline-style-12"
+                            thumbnailUrl={media.thumbnail}
+                            mediaDuration={media.duration}
+                            sourceOffset={clip.sourceOffset}
+                            pixelsPerSecond={pixelsPerSecond}
                           />
                         )}
-                        {track.type === 'audio' && media && (
+                        {track.type === 'audio' && media && media.type === 'audio' && (
                           <div className="timeline-style-13">
                             <WaveformOffset left={-clip.sourceOffset * pixelsPerSecond}>
                               <AudioWaveform
                                 src={getMediaUrl(media.path)}
                                 pixelsPerSecond={pixelsPerSecond}
                                 height={52}
+                                clipDuration={clip.duration + clip.sourceOffset}
+                                playbackRate={clip.audioConfig?.playbackRate || 1}
                               />
                             </WaveformOffset>
                           </div>
+                        )}
+                        {media?.duration && clip.duration + clip.sourceOffset > media.duration && (
+                          <LoopingBoundaryOverlay
+                            mediaDuration={media.duration}
+                            sourceOffset={clip.sourceOffset}
+                            pixelsPerSecond={pixelsPerSecond}
+                          />
                         )}
 
                         {/* Audio Volume Rubber Band */}
@@ -1200,10 +1333,20 @@ export function Timeline(): React.ReactElement {
                                   strokeWidth="1"
                                   className="timeline-style-35"
                                   onMouseDown={(e) => {
+                                    // Blur any active input so global keyboard shortcuts (Delete, Ctrl-Z) work
+                                    if (
+                                      document.activeElement &&
+                                      document.activeElement !== document.body
+                                    ) {
+                                      ;(document.activeElement as HTMLElement).blur()
+                                    }
                                     e.stopPropagation()
                                     useProjectStore.getState().saveHistory()
                                     useProjectStore.getState().setActiveKeyframeId(kf.id)
                                     useProjectStore.getState().setSelectedClipId(clip.id)
+                                    usePlaybackStore
+                                      .getState()
+                                      .setPlayhead(clip.startTime + kf.time)
                                     setDraggingKeyframeId({
                                       clipId: clip.id,
                                       kfId: kf.id,
@@ -1218,9 +1361,11 @@ export function Timeline(): React.ReactElement {
                           </svg>
                         )}
                         <span className="timeline-style-15">
-                          {clip.name ||
-                            media?.name ||
-                            (track.type === 'effect' ? 'Effect' : 'Clip')}
+                          {track.type === 'text' && clip.textProperties
+                            ? `T: ${clip.textProperties.content.substring(0, 20)}`
+                            : clip.name ||
+                              media?.name ||
+                              (track.type === 'effect' ? 'Effect' : 'Clip')}
                         </span>
 
                         {/* Fade Ramps */}
@@ -1283,7 +1428,7 @@ export function Timeline(): React.ReactElement {
                                 resizingClipId === clip.id && dragAnimal
                                   ? dragAnimal === 'bunny'
                                     ? 'cursor-bunny'
-                                    : 'cursor-turtle'
+                                    : 'cursor-clock'
                                   : isAltPressed
                                     ? 'cursor-speed'
                                     : ''
@@ -1304,7 +1449,7 @@ export function Timeline(): React.ReactElement {
                                 resizingClipId === clip.id && dragAnimal
                                   ? dragAnimal === 'bunny'
                                     ? 'cursor-bunny'
-                                    : 'cursor-turtle'
+                                    : 'cursor-clock'
                                   : isAltPressed
                                     ? 'cursor-speed'
                                     : ''
@@ -1325,10 +1470,12 @@ export function Timeline(): React.ReactElement {
                               title={`Keyframe at ${kf.time}s`}
                               className="timeline-style-21"
                               onMouseDown={(e) => {
+                                ;(document.activeElement as HTMLElement)?.blur()
                                 e.stopPropagation()
                                 useProjectStore.getState().saveHistory()
                                 useProjectStore.getState().setActiveKeyframeId(kf.id)
                                 useProjectStore.getState().setSelectedClipId(clip.id)
+                                usePlaybackStore.getState().setPlayhead(clip.startTime + kf.time)
                                 setDraggingKeyframeId({
                                   clipId: clip.id,
                                   kfId: kf.id,
@@ -1363,7 +1510,7 @@ export function Timeline(): React.ReactElement {
         </WithMinWidth>
 
         {/* Playhead Line Overlay */}
-        <PlayheadLine pixelsPerSecond={pixelsPerSecond} />
+        <PlayheadLine pixelsPerSecond={pixelsPerSecond} tracksHeight={tracksHeight} />
 
         {/* Range Markers */}
         {rangeMarkers.start !== null && (
@@ -1371,6 +1518,7 @@ export function Timeline(): React.ReactElement {
             time={rangeMarkers.start}
             pixelsPerSecond={pixelsPerSecond}
             color="#22c55e"
+            tracksHeight={tracksHeight}
             onMouseDown={(e) => {
               e.stopPropagation()
               setDraggingRangeMarker('start')
@@ -1382,6 +1530,7 @@ export function Timeline(): React.ReactElement {
             time={rangeMarkers.end}
             pixelsPerSecond={pixelsPerSecond}
             color="#ef4444"
+            tracksHeight={tracksHeight}
             onMouseDown={(e) => {
               e.stopPropagation()
               setDraggingRangeMarker('end')
@@ -1393,6 +1542,7 @@ export function Timeline(): React.ReactElement {
         {activeTool === 'razor' && hoverTime !== null && (
           <PositionedOverlay
             left={80 + hoverTime * pixelsPerSecond}
+            tracksHeight={tracksHeight}
             className="timeline-style-22"
           />
         )}
@@ -1402,6 +1552,7 @@ export function Timeline(): React.ReactElement {
           <PositionedOverlay
             left={80 + Math.min(cropDragStart, cropDragEnd) * pixelsPerSecond}
             width={Math.abs(cropDragEnd - cropDragStart) * pixelsPerSecond}
+            tracksHeight={tracksHeight}
             className="timeline-style-23"
           />
         )}
@@ -1410,6 +1561,7 @@ export function Timeline(): React.ReactElement {
         {targetDuration !== null && (
           <PositionedOverlay
             left={80 + targetDuration * pixelsPerSecond}
+            tracksHeight={tracksHeight}
             className="timeline-style-24"
           >
             <div className="timeline-style-25">EXPORT END</div>
@@ -1432,6 +1584,24 @@ export function Timeline(): React.ReactElement {
             y={trackContextMenu.y}
             className="timeline-style-27"
           >
+            <button
+              className="context-menu-item timeline-style-28"
+              onClick={() => {
+                const track = tracks[trackContextMenu.trackIndex]
+                if (track.type === 'audio') {
+                  useProjectStore.getState().updateTrack(track.id, { isMuted: !track.isMuted })
+                } else {
+                  useProjectStore.getState().updateTrack(track.id, { isHidden: !track.isHidden })
+                }
+                setTrackContextMenu(null)
+              }}
+            >
+              {(() => {
+                const track = tracks[trackContextMenu.trackIndex]
+                if (track.type === 'audio') return track.isMuted ? 'Unmute Track' : 'Mute Track'
+                return track.isHidden ? 'Unhide Track' : 'Hide Track'
+              })()}
+            </button>
             <button
               className="context-menu-item timeline-style-28"
               onClick={() => {
@@ -1638,11 +1808,22 @@ const PlayheadIndicator = ({
 }: {
   pixelsPerSecond: number
 }): React.ReactElement => {
-  const playhead = useProjectStore((s) => s.playhead)
   const ref = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-    if (ref.current) ref.current.style.left = `${playhead * pixelsPerSecond}px`
-  }, [playhead, pixelsPerSecond])
+    const unsub = usePlaybackStore.subscribe((state, prevState) => {
+      if (ref.current && state.playhead !== prevState.playhead) {
+        ref.current.style.left = `${state.playhead * pixelsPerSecond}px`
+      }
+    })
+
+    if (ref.current) {
+      ref.current.style.left = `${usePlaybackStore.getState().playhead * pixelsPerSecond}px`
+    }
+
+    return unsub
+  }, [pixelsPerSecond])
+
   return (
     <div ref={ref} className="playhead-handle timeline-style-30">
       {/* Triangle indicator — left:-4px is in CSS (.timeline-style-31) */}
@@ -1651,12 +1832,24 @@ const PlayheadIndicator = ({
   )
 }
 
-const PlayheadLine = ({ pixelsPerSecond }: { pixelsPerSecond: number }): React.ReactElement => {
-  const playhead = useProjectStore((s) => s.playhead)
+const PlayheadLine = ({
+  pixelsPerSecond,
+  tracksHeight
+}: {
+  pixelsPerSecond: number
+  tracksHeight: number
+}): React.ReactElement => {
+  const playhead = usePlaybackStore((s) => s.playhead)
   const ref = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-    if (ref.current) ref.current.style.left = `${80 + playhead * pixelsPerSecond}px`
-  }, [playhead, pixelsPerSecond])
+    if (ref.current) {
+      ref.current.style.left = `${80 + playhead * pixelsPerSecond}px`
+      ref.current.style.bottom = 'auto'
+      ref.current.style.minHeight = `max(100%, ${tracksHeight}px)`
+    }
+  }, [playhead, pixelsPerSecond, tracksHeight])
+
   // margin-left:-1px is in CSS (.timeline-style-32)
   return <div ref={ref} className="playhead-line timeline-style-32" />
 }
@@ -1687,11 +1880,13 @@ const RangeMarkerLine = ({
   pixelsPerSecond,
   time,
   color,
+  tracksHeight,
   onMouseDown
 }: {
   pixelsPerSecond: number
   time: number
   color: string
+  tracksHeight: number
   onMouseDown: (e: React.MouseEvent) => void
 }): React.ReactElement => {
   const ref = useRef<HTMLDivElement>(null)
@@ -1700,7 +1895,9 @@ const RangeMarkerLine = ({
       ref.current.style.left = `${80 + time * pixelsPerSecond}px`
       ref.current.style.backgroundColor = color
       ref.current.style.boxShadow = `0 0 4px ${color}`
+      ref.current.style.bottom = 'auto'
+      ref.current.style.minHeight = `max(100%, ${tracksHeight}px)`
     }
-  }, [time, pixelsPerSecond, color])
+  }, [time, pixelsPerSecond, color, tracksHeight])
   return <div ref={ref} onMouseDown={onMouseDown} className="timeline-style-39" />
 }

@@ -408,7 +408,9 @@ input[type='number'].hide-spinners {
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.2s, background 0.2s;
+  transition:
+    opacity 0.2s,
+    background 0.2s;
   cursor: pointer;
   z-index: 10;
 }
@@ -631,4 +633,77 @@ input[type='number'].hide-spinners {
   font-size: 9px;
   font-weight: bold;
   margin-top: 2px;
+}
+
+/* EffectsPalette Styles */
+.effectspalette-flex-gap {
+  display: flex;
+  gap: 8px;
+}
+.effectspalette-text-panel {
+  flex: 1;
+  overflow-y: auto;
+  border-top: 1px solid var(--color-border);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+.effectspalette-pad-x {
+  padding: 0 16px;
+}
+.effectspalette-textarea { min-height: 80px; white-space: pre-wrap; resize: vertical; }
+.effectspalette-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.effectspalette-color-input {
+  height: 40px;
+  padding: 0;
+  cursor: pointer;
+}
+.effectspalette-margin-top {
+  margin-top: 16px;
+}
+.effectspalette-shadow-box {
+  margin-top: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+}
+.effectspalette-margin-bottom {
+  margin-bottom: 12px;
+}
+.effectspalette-bold {
+  font-weight: bold;
+}
+.effectspalette-margin-top-small {
+  margin-top: 8px;
+}
+.effectspalette-color-input-small {
+  height: 32px;
+  padding: 0;
+  cursor: pointer;
+}
+.effectspalette-color-input-small::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+/* Settings Modal Utilities */
+.settingsmodal-margin-bottom {
+  margin-bottom: 16px;
+}
+.settingsmodal-flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.settingsmodal-break-all {
+  word-break: break-all;
+}
+.settingsmodal-italic {
+  font-style: italic;
+}
+.settingsmodal-margin-top-large {
+  margin-top: 32px;
 }

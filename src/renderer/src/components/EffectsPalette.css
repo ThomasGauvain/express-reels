@@ -92,11 +92,15 @@
 
 .effectspalette-style-13 {
   color: var(--color-text-main);
+  background-color: var(--color-bg-darkest);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 6px 8px;
   font-size: 13px;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
-  max-width: 150px;
+  width: 100%;
 }
 
 .effectspalette-style-14 {
@@ -557,3 +561,5 @@
 .pointer {
   cursor: pointer;
 }
+
+.effectspalette-flex-gap { display: flex; gap: 8px; }

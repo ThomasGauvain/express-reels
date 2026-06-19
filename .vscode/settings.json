@@ -10,5 +10,8 @@
   },
   "css.customData": [".vscode/css-custom-data.json"],
   "css.lint.vendorPrefix": "ignore",
-  "css.lint.unknownProperties": "ignore"
+  "css.lint.unknownProperties": "ignore",
+  "css.lint.compatibleVendorPrefixes": "ignore",
+  "css.lint.unsupportedProperties": "ignore",
+  "css.lint.unknownVendorSpecificProperties": "ignore"
 }

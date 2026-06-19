@@ -145,6 +145,8 @@
   border-radius: 16px;
   color: white;
   font-size: 12px;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .copilotsidebar-style-18 {

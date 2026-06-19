@@ -36,19 +36,40 @@ export interface MediaItem {
   path: string // Local file system path or empty for compositions
   name: string
   type: MediaType
-  masterType?: 'video' | 'audio' | 'effect'
+  masterType?: 'video' | 'audio' | 'effect' | 'text'
   thumbnail?: string // Data URL or path
   duration?: number // For video/audio
   subClips?: Clip[] // For compositions
   subTracks?: Track[] // For compositions
   effect?: VisualEffect
   attribution?: string // For CC-BY license requirements
+  metadata?: Record<string, unknown>
+  workspace?: string
+  rating?: number
+  flag?: 'pick' | 'reject' | 'none'
+  edits?: Record<string, unknown>
+}
+
+export interface StoryboardAssetOption {
+  id: string
+  title: string
+  url: string
+  previewUrl?: string
+  downloadUrl?: string
+  source?: string
+  license?: string
+  thumbnailUrl?: string
+  author?: string
+  duration?: number
+  tags?: string[]
 }
 
 export interface Track {
   id: string
   name: string
-  type: 'video' | 'audio' | 'effect'
+  type: 'video' | 'audio' | 'effect' | 'text'
+  isMuted?: boolean
+  isHidden?: boolean
 }
 
 export interface VisualEffect {
@@ -83,6 +104,22 @@ export interface VideoProperties {
   sharpness: number // 0 to 100
 }
 
+export interface TextProperties {
+  content: string
+  fontFamily: string
+  fontSize: number
+  color: string
+  fontWeight: number | string
+  textAlign?: 'left' | 'center' | 'right'
+  dropShadow?: {
+    enabled: boolean
+    offsetX: number
+    offsetY: number
+    blur: number
+    color: string
+  }
+}
+
 export interface Clip {
   id: string
   mediaId: string // empty for effect clips
@@ -98,9 +135,10 @@ export interface Clip {
   fadeOut?: number
   audioConfig?: AudioConfig
   videoProperties?: VideoProperties
+  textProperties?: TextProperties
   subClips?: Clip[] // For Compound Clips
-  subTracks?: Track[] // For Compound Clips
-  isCollapsed?: boolean // True if this is a Compound Clip
+  subTracks?: Track[] // Used when collapsed
+  isCollapsed?: boolean // True if it's a compound clip and should render as one block
 }
 
 export interface DeletedSection {
@@ -109,7 +147,25 @@ export interface DeletedSection {
   deletedAt: number
 }
 
+export interface CopilotMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface StoryboardAssetReq {
+  id: string
+  type: 'audio' | 'video' | 'image'
+  description: string
+  sourceHint?: string
+  options: StoryboardAssetOption[]
+  selectedOptionId?: string | null
+  status: 'pending' | 'downloaded' | 'error'
+  localMediaId?: string
+}
+
 interface ProjectState {
+  appMode: 'video' | 'stills'
   mediaLibrary: MediaItem[]
   deletedSections: DeletedSection[]
   selectedMediaId: string | null
@@ -146,19 +202,35 @@ interface ProjectState {
   audioCategories: { sfx: string[]; music: string[] }
   vfxCategories: string[]
   exportSettings: {
-    format: 'webm' | 'mp4' | 'mov' | 'mkv' | 'avi'
+    format: 'webm' | 'mp4' | 'mov' | 'mkv' | 'avi' | 'png' | 'jpeg' | 'webp' | 'gif'
     codec: 'h264' | 'h265' | 'vp9' | 'mpeg4' | 'prores'
     quality: 'low' | 'medium' | 'high'
     hwAccel: boolean
     aspectRatio: '16:9' | '9:16' | '4:5' | '1:1'
-    resolution: 720 | 1080 | 1440 | 2160
+    resolution: 720 | 1080 | 1440 | 2160 | 0
     fps: 24 | 30 | 60
   }
 
+  // AI & Storyboard State
+  copilotMessages: CopilotMessage[]
+  storyboard: {
+    targetPlatform: string
+    targetAudience: string[]
+    sceneDescription: string
+    assetChecklist: StoryboardAssetReq[]
+  }
+  downloadDirectory: string
+  customFonts: { name: string; path: string }[]
+
   // Actions
+  setAppMode: (mode: 'video' | 'stills') => void
   addMedia: (items: MediaItem[]) => void
   removeMedia: (id: string) => void
   setSelectedMediaId: (id: string | null) => void
+  updateMediaStillsData: (
+    id: string,
+    data: Partial<Pick<MediaItem, 'rating' | 'flag' | 'edits'>>
+  ) => void
 
   // Project Actions
   newProject: () => void
@@ -185,6 +257,7 @@ interface ProjectState {
 
   // Timeline Actions
   addTrack: (track: Track, insertIndex?: number) => void
+  updateTrack: (id: string, updates: Partial<Track>) => void
   removeTrack: (id: string) => void
   setPlayhead: (time: number | ((prev: number) => number)) => void
   setIsPlaying: (playing: boolean) => void
@@ -208,6 +281,20 @@ interface ProjectState {
   deleteSection: (startTime: number, endTime: number) => void
   removeDeletedSection: (id: string) => void
   clearDeletedSections: () => void
+
+  // AI & Storyboard
+  addCopilotMessage: (msg: CopilotMessage) => void
+  clearCopilotMessages: () => void
+  setStoryboardConfig: (platform: string, audience: string[]) => void
+  setStoryboardScene: (description: string) => void
+  setStoryboardChecklist: (checklist: StoryboardAssetReq[]) => void
+  updateStoryboardAssetOption: (reqId: string, optionId: string) => void
+  markStoryboardAssetDownloaded: (reqId: string, localMediaId: string) => void
+  clearStoryboard: () => void
+  setDownloadDirectory: (dir: string) => void
+  addTextClip: (startTime: number, duration: number) => void
+  addCustomFont: (name: string, path: string) => void
+  removeCustomFont: (name: string) => void
 
   // Ken Burns Actions (Now scoped to Clip)
   setKenBurnsEffect: (clipId: string, effect: KenBurnsEffect) => void
@@ -252,6 +339,7 @@ interface ProjectState {
 export const useProjectStore = create<ProjectState>()(
   persist(
     (set, get) => ({
+      appMode: 'video',
       mediaLibrary: [],
       deletedSections: [],
       selectedMediaId: null,
@@ -303,6 +391,29 @@ export const useProjectStore = create<ProjectState>()(
         resolution: 1080,
         fps: 30
       },
+
+      copilotMessages: [
+        {
+          id: 'initial-sys',
+          role: 'assistant',
+          content:
+            "Hi! I'm your Director Copilot. Tell me about the vibe you want for this reel, or what assets you're looking for, and I'll start fetching options!"
+        }
+      ],
+      storyboard: {
+        targetPlatform: 'TikTok',
+        targetAudience: ['General'],
+        sceneDescription: '',
+        assetChecklist: []
+      },
+      downloadDirectory: '',
+      customFonts: [],
+
+      setAppMode: (mode) => set({ appMode: mode }),
+      updateMediaStillsData: (id, data) =>
+        set((state) => ({
+          mediaLibrary: state.mediaLibrary.map((m) => (m.id === id ? { ...m, ...data } : m))
+        })),
 
       setExportSettings: (settings) =>
         set((state) => ({ exportSettings: { ...state.exportSettings, ...settings } })),
@@ -392,9 +503,8 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       removeMedia: (id) => {
-        get().saveHistory()
         set((state) => ({
-          mediaLibrary: state.mediaLibrary.filter((item) => item.id !== id),
+          mediaLibrary: state.mediaLibrary.filter((m) => m.id !== id),
           selectedMediaId: state.selectedMediaId === id ? null : state.selectedMediaId,
           clips: state.clips.filter((c) => c.mediaId !== id),
           selectedClipId:
@@ -459,6 +569,11 @@ export const useProjectStore = create<ProjectState>()(
           }
           return { tracks: newTracks }
         }),
+
+      updateTrack: (id, updates) =>
+        set((state) => ({
+          tracks: state.tracks.map((t) => (t.id === id ? { ...t, ...updates } : t))
+        })),
 
       removeTrack: (id) =>
         set((state) => ({
@@ -576,7 +691,7 @@ export const useProjectStore = create<ProjectState>()(
 
           if (subClipsToBundle.length === 0) return state
 
-          let masterType: 'video' | 'audio' | 'effect' = 'video'
+          let masterType: 'video' | 'audio' | 'effect' | 'text' = 'video'
           if (rangeMasterTrackId) {
             const masterTrack = tracks.find((t) => t.id === rangeMasterTrackId)
             if (masterTrack) masterType = masterTrack.type
@@ -855,9 +970,120 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       clearDeletedSections: () => {
-        get().saveHistory()
         set({ deletedSections: [] })
       },
+
+      // AI & Storyboard Actions
+      addCopilotMessage: (msg) =>
+        set((state) => ({ copilotMessages: [...(state.copilotMessages || []), msg] })),
+      clearCopilotMessages: () =>
+        set(() => ({
+          copilotMessages: [
+            {
+              id: 'initial-sys',
+              role: 'assistant',
+              content:
+                "Hi! I'm your Director Copilot. Tell me about the vibe you want for this reel, or what assets you're looking for, and I'll start fetching options!"
+            }
+          ]
+        })),
+
+      setStoryboardConfig: (platform, audience) =>
+        set((state) => ({
+          storyboard: { ...state.storyboard, targetPlatform: platform, targetAudience: audience }
+        })),
+      setStoryboardScene: (description) =>
+        set((state) => ({
+          storyboard: { ...state.storyboard, sceneDescription: description }
+        })),
+      setStoryboardChecklist: (checklist) =>
+        set((state) => ({
+          storyboard: { ...state.storyboard, assetChecklist: checklist }
+        })),
+      updateStoryboardAssetOption: (reqId, optionId) =>
+        set((state) => ({
+          storyboard: {
+            ...state.storyboard,
+            assetChecklist: state.storyboard.assetChecklist.map((req) =>
+              req.id === reqId ? { ...req, selectedOptionId: optionId } : req
+            )
+          }
+        })),
+      markStoryboardAssetDownloaded: (reqId, localMediaId) =>
+        set((state) => ({
+          storyboard: {
+            ...state.storyboard,
+            assetChecklist: state.storyboard.assetChecklist.map((req) =>
+              req.id === reqId ? { ...req, status: 'downloaded', localMediaId } : req
+            )
+          }
+        })),
+      clearStoryboard: () =>
+        set((state) => ({
+          storyboard: {
+            ...state.storyboard,
+            sceneDescription: '',
+            assetChecklist: []
+          }
+        })),
+      setDownloadDirectory: (dir) => set({ downloadDirectory: dir }),
+
+      addCustomFont: (name, path) =>
+        set((state) => ({
+          customFonts: [...state.customFonts, { name, path }]
+        })),
+
+      removeCustomFont: (name) =>
+        set((state) => ({
+          customFonts: state.customFonts.filter((f) => f.name !== name)
+        })),
+
+      addTextClip: (startTime, duration) =>
+        set((state) => {
+          let textTrack = state.tracks.find((t) => t.type === 'text')
+          let newTracks = state.tracks
+
+          if (!textTrack) {
+            textTrack = { id: crypto.randomUUID(), name: 'Text', type: 'text' }
+            // Put text track at the beginning so it renders on top
+            newTracks = [textTrack, ...state.tracks]
+          }
+
+          const newClip: Clip = {
+            id: crypto.randomUUID(),
+            mediaId: '',
+            trackId: textTrack.id,
+            startTime,
+            duration,
+            sourceOffset: 0,
+            name: 'Text Layer',
+            textProperties: {
+              content: 'Double click to edit text',
+              fontFamily: 'Inter',
+              fontSize: 100,
+              color: '#ffffff',
+              fontWeight: 600,
+              textAlign: 'center',
+              dropShadow: {
+                enabled: true,
+                offsetX: 2,
+                offsetY: 2,
+                blur: 4,
+                color: 'rgba(0,0,0,0.8)'
+              }
+            }
+          }
+
+          const newClips = [...state.clips, newClip]
+
+          return {
+            tracks: newTracks,
+            clips: newClips,
+            targetDuration: state.autoAdjustTargetDuration
+              ? Math.max(0, ...newClips.map((c) => c.startTime + c.duration))
+              : state.targetDuration
+          }
+        }),
 
       setKenBurnsEffect: (clipId, effect) =>
         set((state) => {

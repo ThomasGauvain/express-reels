@@ -1,0 +1,19 @@
+.stills-presets-list {
+  gap: 8px;
+}
+
+.preset-btn {
+  background: #222;
+  border: 1px solid #333;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.preset-btn:hover {
+  background: #333;
+}

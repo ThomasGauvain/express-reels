@@ -9,12 +9,16 @@ export const AudioWaveform = ({
   src,
   pixelsPerSecond,
   height = 40,
-  color = 'rgba(255, 255, 255, 0.4)'
+  color = 'rgba(255, 255, 255, 0.4)',
+  clipDuration,
+  playbackRate = 1
 }: {
   src: string
   pixelsPerSecond: number
   height?: number
   color?: string
+  clipDuration?: number
+  playbackRate?: number
 }): ReactElement => {
   const [peaks, setPeaks] = useState<number[]>([])
 
@@ -36,8 +40,22 @@ export const AudioWaveform = ({
       const ctx = audioCtx
 
       try {
-        const response = await fetch(src)
-        const arrayBuffer = await response.arrayBuffer()
+        let arrayBuffer: ArrayBuffer
+        if (src.startsWith('file://')) {
+          const filePath = decodeURIComponent(src.replace('file:///', '').replace('file://', ''))
+          // @ts-ignore: electron API is injected via preload script
+          const buffer = await window.electron.ipcRenderer.invoke(
+            'system:read-file-buffer',
+            filePath
+          )
+          if (!buffer) throw new Error('Failed to read waveform source: ' + filePath)
+          const freshBuffer = new ArrayBuffer(buffer.length)
+          new Uint8Array(freshBuffer).set(buffer)
+          arrayBuffer = freshBuffer
+        } else {
+          const response = await fetch(src, { cache: 'no-store' })
+          arrayBuffer = await response.arrayBuffer()
+        }
 
         // AudioContext decoding
         const audioBuffer = await ctx.decodeAudioData(arrayBuffer)
@@ -75,38 +93,38 @@ export const AudioWaveform = ({
     if (peaks.length === 0) return ''
 
     const points: string[] = []
-
-    // Each peak represents 1/20th of a second
-    const totalPeaks = peaks.length
-    const peakWidth = pixelsPerSecond / 20
-
-    // Normalize peaks slightly to make them look better (boost quiet parts, cap loud parts)
+    const peakWidth = pixelsPerSecond / 20 / playbackRate
     const maxPeak = Math.max(...peaks, 0.1)
 
-    for (let i = 0; i < totalPeaks; i++) {
+    const mediaDuration = peaks.length / 20
+    const targetDuration = clipDuration !== undefined ? clipDuration : mediaDuration / playbackRate
+    const totalRequiredPeaks = Math.ceil(targetDuration * 20 * playbackRate)
+
+    for (let i = 0; i < totalRequiredPeaks; i++) {
       const x = i * peakWidth
-      // Normalize relative to the loudest part of this specific track, scaled to height
-      const p = peaks[i] / maxPeak
+      const p = peaks[i % peaks.length] / maxPeak
       const h = Math.max(1, p * height * 0.9) // 90% height max so it doesn't touch edges
       const y = (height - h) / 2
       points.push(`M ${x},${y} L ${x},${y + h}`)
     }
 
     return points.join(' ')
-  }, [peaks, pixelsPerSecond, height])
+  }, [peaks, pixelsPerSecond, height, clipDuration, playbackRate])
 
   if (peaks.length === 0) {
     return <div className="waveform-loading">Loading Waveform...</div>
   }
 
-  const svgWidth = peaks.length * (pixelsPerSecond / 20)
+  const mediaDuration = peaks.length / 20
+  const targetDuration = clipDuration !== undefined ? clipDuration : mediaDuration / playbackRate
+  const svgWidth = targetDuration * pixelsPerSecond
 
   return (
     <svg width={svgWidth} height={height} className="waveform-svg">
       <path
         d={svgPath}
         stroke={color}
-        strokeWidth={Math.max(1, (pixelsPerSecond / 20) * 0.6)}
+        strokeWidth={Math.max(1, (pixelsPerSecond / 20 / playbackRate) * 0.6)}
         strokeLinecap="round"
       />
     </svg>

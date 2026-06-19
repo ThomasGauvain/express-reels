@@ -13,121 +13,125 @@ interface Message {
 export function CopilotSidebar(): React.ReactElement {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content:
-        'Hello! I am your AI Copilot powered by Gemini 3.5 Flash. I can see your timeline and media. How can I help you edit today?'
-    }
-  ])
-  const { aiKeys } = useProjectStore()
+
+  const aiKeys = useProjectStore((s) => s.aiKeys)
+  const copilotMessages = useProjectStore((s) => s.copilotMessages)
+  const addCopilotMessage = useProjectStore((s) => s.addCopilotMessage)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
       behavior: 'smooth'
     })
-  }, [messages, isTyping])
+  }, [copilotMessages, isTyping])
   const handleSend = async (e?: React.FormEvent, customInput?: string): Promise<void> => {
     if (e) e.preventDefault()
     const text = customInput || input
     if (!text.trim() || isTyping) return
+
+    if (!aiKeys?.gemini) {
+      addCopilotMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content:
+          '**Error**: You need to configure a Gemini API Key in Settings before you can use the AI Copilot.'
+      })
+      return
+    }
+
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
       content: text
     }
-    setMessages((prev) => [...prev, userMsg])
+    addCopilotMessage(userMsg)
     setInput('')
     setIsTyping(true)
     try {
-      let responseText = await sendCopilotMessage(text, true)
-      if (!responseText) {
+      const response = await sendCopilotMessage(text, true)
+      if (!response) {
         throw new Error('No response from Gemini')
       }
 
-      // Parse JSON commands if they exist
-      const match = responseText.match(/```json\s*([\s\S]*?)\s*```/)
-      if (match) {
-        try {
-          const jsonStr = match[1]
-          const payload = JSON.parse(jsonStr)
-          if (payload.commands && Array.isArray(payload.commands)) {
-            const store = useProjectStore.getState()
-            payload.commands.forEach((cmd: any) => {
-              if (cmd.action === 'ADD_VFX' && store.selectedClipId) {
-                const effect = MOCK_EFFECTS.find((fx) => fx.id === cmd.effectId)
-                if (effect) {
-                  store.addVisualEffect(
-                    {
-                      ...effect,
-                      id: crypto.randomUUID()
-                    },
-                    store.selectedClipId
-                  )
-                }
-              }
-              if (cmd.action === 'ADD_AUDIO') {
-                const audio = MOCK_AUDIO.find((a) => a.id === cmd.id)
-                if (audio) {
-                  // Add to media library
-                  const newMediaId = crypto.randomUUID()
-                  store.addMedia([
-                    {
-                      id: newMediaId,
-                      path: `mock://audio/${audio.id}`,
-                      name: audio.name,
-                      type: 'audio',
-                      duration: audio.duration
-                    }
-                  ])
+      const responseText = response.text || ''
 
-                  // Add to timeline on audio track 'a1'
-                  const a1Clips = store.clips.filter((c) => c.trackId === 'a1')
-                  const maxTime =
-                    a1Clips.length > 0
-                      ? Math.max(...a1Clips.map((c) => c.startTime + c.duration))
-                      : 0
-                  store.addClip({
+      // Process native Tool Calling from Gemini
+      if (response.functionCalls && response.functionCalls.length > 0) {
+        for (const call of response.functionCalls) {
+          if (call.name === 'execute_timeline_commands') {
+            const payload = call.args as any
+            if (payload.commands && Array.isArray(payload.commands)) {
+              const store = useProjectStore.getState()
+              payload.commands.forEach((cmd: any) => {
+                if (cmd.action === 'ADD_VFX' && store.selectedClipId) {
+                  const effect = MOCK_EFFECTS.find((fx) => fx.id === cmd.effectId)
+                  if (effect) {
+                    store.addVisualEffect(
+                      {
+                        ...effect,
+                        id: crypto.randomUUID()
+                      },
+                      store.selectedClipId
+                    )
+                  }
+                }
+                if (cmd.action === 'ADD_AUDIO') {
+                  const audio = MOCK_AUDIO.find((a) => a.id === cmd.id)
+                  if (audio) {
+                    // Add to media library
+                    const newMediaId = crypto.randomUUID()
+                    store.addMedia([
+                      {
+                        id: newMediaId,
+                        path: `mock://audio/${audio.id}`,
+                        name: audio.name,
+                        type: 'audio',
+                        duration: audio.duration
+                      }
+                    ])
+
+                    // Add to timeline on audio track 'a1'
+                    const a1Clips = store.clips.filter((c) => c.trackId === 'a1')
+                    const maxTime =
+                      a1Clips.length > 0
+                        ? Math.max(...a1Clips.map((c) => c.startTime + c.duration))
+                        : 0
+                    store.addClip({
+                      id: crypto.randomUUID(),
+                      mediaId: newMediaId,
+                      trackId: 'a1',
+                      startTime: maxTime,
+                      duration: audio.duration,
+                      sourceOffset: 0
+                    })
+                  }
+                }
+                if (cmd.action === 'ADD_KEYFRAME' && store.selectedClipId) {
+                  store.addKenBurnsKeyframe(store.selectedClipId, {
                     id: crypto.randomUUID(),
-                    mediaId: newMediaId,
-                    trackId: 'a1',
-                    startTime: maxTime,
-                    duration: audio.duration,
-                    sourceOffset: 0
+                    time: typeof cmd.time === 'number' ? cmd.time : 0,
+                    x: typeof cmd.x === 'number' ? cmd.x : 50,
+                    y: typeof cmd.y === 'number' ? cmd.y : 50,
+                    zoom: typeof cmd.zoom === 'number' ? cmd.zoom : 1
                   })
                 }
-              }
-              if (cmd.action === 'ADD_KEYFRAME' && store.selectedClipId) {
-                store.addKenBurnsKeyframe(store.selectedClipId, {
-                  id: crypto.randomUUID(),
-                  time: typeof cmd.time === 'number' ? cmd.time : 0,
-                  x: typeof cmd.x === 'number' ? cmd.x : 50,
-                  y: typeof cmd.y === 'number' ? cmd.y : 50,
-                  zoom: typeof cmd.zoom === 'number' ? cmd.zoom : 1
-                })
-              }
-            })
+              })
+            }
           }
-        } catch (err) {
-          console.warn('Failed to parse Copilot command JSON:', err)
         }
-        // Remove the JSON block from the text before displaying it to the user
-        responseText = responseText.replace(/```json\s*[\s\S]*?\s*```/, '').trim()
       }
       const aiMsg: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: responseText
       }
-      setMessages((prev) => [...prev, aiMsg])
+      addCopilotMessage(aiMsg)
     } catch (error: any) {
       const errorMsg: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: `**Error**: ${error.message || 'Failed to communicate with Gemini.'}`
       }
-      setMessages((prev) => [...prev, errorMsg])
+      addCopilotMessage(errorMsg)
     } finally {
       setIsTyping(false)
     }
@@ -150,7 +154,7 @@ export function CopilotSidebar(): React.ReactElement {
 
       {/* Chat Area */}
       <div className="copilotsidebar-style-6">
-        {messages.map((msg) => (
+        {copilotMessages.map((msg) => (
           <div key={msg.id} className={`chat-message copilotsidebar-style-7 msg-${msg.role}`}>
             <div className="copilotsidebar-style-8">{msg.content}</div>
             {msg.role === 'assistant' && (
@@ -198,13 +202,13 @@ export function CopilotSidebar(): React.ReactElement {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            disabled={isTyping || !aiKeys?.gemini}
+            disabled={isTyping}
             placeholder="Ask Copilot anything..."
             className="copilotsidebar-style-17"
           />
           <button
             type="submit"
-            disabled={!input.trim() || isTyping || !aiKeys?.gemini}
+            disabled={!input.trim() || isTyping}
             title="Send message"
             aria-label="Send message"
             className="copilotsidebar-style-18"

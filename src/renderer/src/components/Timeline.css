@@ -297,7 +297,8 @@
   width: 2px;
   background-color: var(--color-accent);
   z-index: 50;
-  cursor: ew-resize;
+  cursor: ew-resize !important;
+  pointer-events: auto !important;
 }
 
 .timeline-style-31 {
@@ -308,6 +309,8 @@
   height: 10px;
   background-color: var(--color-accent);
   clip-path: polygon(0 0, 100% 0, 50% 100%);
+  cursor: ew-resize !important;
+  pointer-events: auto !important;
 }
 
 .timeline-style-32 {
@@ -316,8 +319,8 @@
   bottom: 0px;
   width: 4px;
   background-color: var(--color-accent);
-  pointer-events: auto;
-  cursor: ew-resize;
+  pointer-events: auto !important;
+  cursor: ew-resize !important;
   z-index: 50;
   margin-left: -1px;
 }
@@ -356,9 +359,9 @@
     ew-resize !important;
 }
 
-.cursor-turtle {
+.cursor-clock {
   cursor:
-    url('data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"%3E%3Ctext x="16" y="18" font-size="20" text-anchor="middle" dominant-baseline="middle"%3E🐢%3C/text%3E%3C/svg%3E')
+    url('data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"%3E%3Ctext x="16" y="18" font-size="20" text-anchor="middle" dominant-baseline="middle"%3E🕒%3C/text%3E%3C/svg%3E')
       16 16,
     ew-resize !important;
 }
@@ -412,4 +415,3 @@
   border-top: 1px solid rgba(59, 130, 246, 0.3);
   border-bottom: 1px solid rgba(59, 130, 246, 0.3);
 }
-

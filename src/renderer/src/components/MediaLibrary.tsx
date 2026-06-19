@@ -70,7 +70,7 @@ export function MediaLibrary(): React.ReactElement {
     }
 
     const audioUrl =
-      path.startsWith('http') || path.startsWith('data:')
+      path.startsWith('http') || path.startsWith('data:') || path.startsWith('blob:')
         ? path
         : `file:///${path.replace(/\\/g, '/')}`
     const newAudio = new Audio(audioUrl)
@@ -169,6 +169,13 @@ export function MediaLibrary(): React.ReactElement {
     }
   }
 
+  const handleImportFolderClick = async (): Promise<void> => {
+    const filePaths: string[] = await window.electron.ipcRenderer.invoke('dialog:openDirectory')
+    if (filePaths && filePaths.length > 0) {
+      processFilePaths(filePaths)
+    }
+  }
+
   const processFilePaths = async (filePaths: string[]): Promise<void> => {
     console.log('Processing paths:', filePaths)
 
@@ -187,23 +194,58 @@ export function MediaLibrary(): React.ReactElement {
         if (type === 'image' || type === 'video') {
           try {
             const { generateThumbnail } = await import('../lib/thumbnails')
-            const sourceUrl = `file:///${filePath.replace(/\\/g, '/')}`
+            const sourceUrl =
+              filePath.startsWith('blob:') || filePath.startsWith('http:')
+                ? filePath
+                : `file:///${filePath.replace(/\\/g, '/')}`
             const base64Data = await generateThumbnail(sourceUrl, type)
             thumbnail = (await window.api.saveThumbnail(id, base64Data)) ?? undefined
           } catch (err) {
             console.error(`Failed to generate thumbnail for ${name}:`, err)
-            thumbnail = `file:///${filePath.replace(/\\/g, '/')}`
+            thumbnail =
+              filePath.startsWith('blob:') || filePath.startsWith('http:')
+                ? filePath
+                : `file:///${filePath.replace(/\\/g, '/')}`
           }
         }
 
-        console.log(`Processed file ${name}:`, { filePath, type, thumbnail })
+        let attribution: string | undefined = undefined
+        try {
+          const metadata = await window.api.getMediaMetadata(filePath)
+          if (metadata && metadata.artist) {
+            attribution = `Visuals by: ${metadata.artist}`
+            console.log(`Extracted metadata artist for ${name}: ${metadata.artist}`)
+          }
+        } catch (err) {
+          console.error(`Failed to get metadata for ${name}:`, err)
+        }
 
-        return { id, path: filePath, name, type, thumbnail }
+        console.log(`Processed file ${name}:`, { filePath, type, thumbnail, attribution })
+
+        return { id, path: filePath, name, type, thumbnail, attribution }
       })
     )
 
     console.log('Adding new items to store:', newItems)
     addMedia(newItems)
+
+    let enableBackgroundProxies = false
+    if (window.api?.readSettings) {
+      try {
+        const res = await window.api.readSettings('preferences')
+        if (res) {
+          const parsed = JSON.parse(res)
+          enableBackgroundProxies = !!parsed.enableBackgroundProxies
+        }
+      } catch (e) {
+        console.error('Failed to read preferences for proxy generation', e)
+      }
+    }
+
+    if (enableBackgroundProxies) {
+      // Trigger proxy generation for videos asynchronously
+      // (Proxy generation disabled pending backend support)
+    }
 
     if (newItems.every((item) => item.type === 'audio')) {
       setActiveTab('audio')
@@ -222,6 +264,7 @@ export function MediaLibrary(): React.ReactElement {
   }
 
   const displayedItems = mediaLibrary.filter((item) => {
+    if (item.workspace === 'stills') return false
     if (activeTab === 'audio') return item.type === 'audio'
     return (
       item.type === 'image' ||
@@ -433,9 +476,14 @@ export function MediaLibrary(): React.ReactElement {
 
       {/* Import Button */}
       <div className="ml-footer">
-        <button className="ml-import-btn" onClick={handleImportClick}>
-          + Import Local Media
-        </button>
+        <div className="ml-browser-row">
+          <button className="ml-import-btn" onClick={handleImportClick}>
+            + Import Files
+          </button>
+          <button className="ml-import-btn" onClick={handleImportFolderClick}>
+            + Import Folder
+          </button>
+        </div>
 
         <div className="ml-browser-row">
           <button

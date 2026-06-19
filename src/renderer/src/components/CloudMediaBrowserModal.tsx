@@ -25,8 +25,9 @@ export function CloudMediaBrowserModal({ onClose }: { onClose: () => void }): Re
           setLoading(false)
           return
         }
+        const safeSearch = search.length > 100 ? search.substring(0, 100) : search
         const res = await fetch(
-          `https://pixabay.com/api/videos/?key=${aiKeys.pixabay}&q=${encodeURIComponent(search)}&per_page=100`
+          `https://pixabay.com/api/videos/?key=${aiKeys.pixabay}&q=${encodeURIComponent(safeSearch)}&per_page=100`
         )
         if (!res.ok) throw new Error('Pixabay API error: ' + res.statusText)
         const data = await res.json()

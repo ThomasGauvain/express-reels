@@ -1,3 +1,4 @@
+import { usePlaybackStore } from '../store/playbackStore'
 import { useProjectStore } from '../store/projectStore'
 
 export async function fileToBase64(filePath: string): Promise<{ mimeType: string; data: string }> {
@@ -53,8 +54,9 @@ export async function fileToBase64(filePath: string): Promise<{ mimeType: string
  */
 export function getTimelineContextSummary(): string {
   const state = useProjectStore.getState()
+  const playbackState = usePlaybackStore.getState()
 
-  let summary = `Current Playhead Position: ${state.playhead.toFixed(2)}s\n`
+  let summary = `Current Playhead Position: ${playbackState.playhead.toFixed(2)}s\n`
   summary += `Total Clips on Timeline: ${state.clips.length}\n\n`
 
   const requiredAttributions = new Set<string>()
@@ -98,6 +100,15 @@ export function getTimelineContextSummary(): string {
     }
   }
 
+  if (state.mediaLibrary.length > 0) {
+    summary += `\nMedia Library (Available Files):\n`
+    state.mediaLibrary.forEach((media) => {
+      summary += `- [${media.type.toUpperCase()}] "${media.name}"\n`
+    })
+  } else {
+    summary += `\nMedia Library is currently empty.\n`
+  }
+
   return summary
 }
 
@@ -106,7 +117,8 @@ export function getTimelineContextSummary(): string {
  */
 export async function getVisibleMediaAtPlayhead(): Promise<{ mimeType: string; data: string }[]> {
   const state = useProjectStore.getState()
-  const time = state.playhead
+  const playbackState = usePlaybackStore.getState()
+  const time = playbackState.playhead
 
   // Find all video/image clips intersecting the playhead
   const visibleClips = state.clips.filter(

@@ -18,7 +18,7 @@ import { ExportEngine } from './ExportEngine'
 import { startSocialMediaPost, continueSocialMediaPost, SocialPostState } from '../lib/gemini'
 
 export function ExportModal({ onClose }: { onClose: () => void }): React.ReactElement {
-  const { exportSettings, setExportSettings } = useProjectStore()
+  const { exportSettings, setExportSettings, appMode, mediaLibrary } = useProjectStore()
   const [isExporting, setIsExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const progressBarRef = useRef<HTMLDivElement>(null)
@@ -34,12 +34,20 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
   const [editedPost, setEditedPost] = useState('')
   const [exportedFilePath, setExportedFilePath] = useState<string | null>(null)
   const [chatInput, setChatInput] = useState('')
+  const [watermark, setWatermark] = useState('')
 
   // Dragging state
   const modalRef = useRef<HTMLDivElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
   const dragStartPos = useRef({ x: 0, y: 0 })
   const currentPos = useRef({ x: 0, y: 0 })
+
+  useEffect(() => {
+    if (overlayRef.current) {
+      overlayRef.current.style.setProperty('-webkit-app-region', 'no-drag')
+    }
+  }, [])
 
   useEffect((): void => {
     if (progressBarRef.current) {
@@ -76,6 +84,136 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
     }
   }
 
+  const handleStillsExport = async (): Promise<void> => {
+    setIsExporting(true)
+    setProgress(0)
+    setExportComplete(false)
+
+    try {
+      const exportPhotos = mediaLibrary.filter(
+        (m) => m.type === 'image' && ((m.rating && m.rating >= 1) || m.flag === 'pick')
+      )
+      if (exportPhotos.length === 0) {
+        alert('No photos selected for export (Rate 1+ or flag as Pick)')
+        setIsExporting(false)
+        return
+      }
+
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('Failed to get 2d context')
+
+      const exportedData: { name: string; dataUrl: string }[] = []
+
+      for (let i = 0; i < exportPhotos.length; i++) {
+        const photo = exportPhotos[i]
+
+        // Load image
+        const img = new window.Image()
+        img.src = photo.path
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve()
+          img.onerror = () => reject(new Error('Failed to load image'))
+        })
+
+        const edits = (photo.edits as Record<string, any>) || {}
+        const currentCrop = edits.crop || { x: 0, y: 0, w: 1, h: 1 }
+
+        const renderWidth =
+          currentSettings.resolution === 0 ? img.width * currentCrop.w : currentSettings.resolution
+        const renderHeight =
+          currentSettings.resolution === 0
+            ? img.height * currentCrop.h
+            : renderWidth / ((img.width * currentCrop.w) / (img.height * currentCrop.h))
+
+        canvas.width = renderWidth
+        canvas.height = renderHeight
+
+        const exposure = edits.exposure || 0
+        const contrast = edits.contrast || 0
+        const saturation = edits.saturation || 0
+        const denoise = edits.denoise || 0
+        const skinTone = edits.skinTone || 0
+
+        const brightnessVal = 100 + exposure * 20
+        const contrastVal = 100 + contrast
+        const saturateVal = 100 + saturation
+        const blurVal = denoise > 0 ? (denoise / 100) * 1.5 : 0
+        const sepiaVal = skinTone > 0 ? skinTone / 2 : 0
+        const hueRotateVal = skinTone < 0 ? skinTone / 5 : 0
+
+        ctx.filter = `brightness(${brightnessVal}%) contrast(${contrastVal}%) saturate(${saturateVal}%) blur(${blurVal}px) sepia(${sepiaVal}%) hue-rotate(${hueRotateVal}deg)`
+
+        const rotate = edits.rotate || 0
+        if (rotate) {
+          ctx.save()
+          ctx.translate(renderWidth / 2, renderHeight / 2)
+          ctx.rotate((rotate * Math.PI) / 180)
+          ctx.translate(-renderWidth / 2, -renderHeight / 2)
+        }
+
+        const sx = img.width * currentCrop.x
+        const sy = img.height * currentCrop.y
+        const sw = img.width * currentCrop.w
+        const sh = img.height * currentCrop.h
+
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, renderWidth, renderHeight)
+
+        if (rotate) {
+          ctx.restore()
+        }
+
+        // Apply watermark
+        if (watermark.trim()) {
+          ctx.filter = 'none' // Reset filter for watermark
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
+          ctx.font = `bold ${Math.max(20, renderWidth * 0.03)}px sans-serif`
+          ctx.textAlign = 'right'
+          ctx.textBaseline = 'bottom'
+
+          // Draw text with shadow
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+          ctx.shadowBlur = 4
+          ctx.shadowOffsetX = 2
+          ctx.shadowOffsetY = 2
+
+          ctx.fillText(watermark, renderWidth - 20, renderHeight - 20)
+
+          // Reset shadow
+          ctx.shadowColor = 'transparent'
+          ctx.shadowBlur = 0
+          ctx.shadowOffsetX = 0
+          ctx.shadowOffsetY = 0
+        }
+
+        let mimeType = 'image/jpeg'
+        if (currentSettings.format === 'png') mimeType = 'image/png'
+        if (currentSettings.format === 'webp') mimeType = 'image/webp'
+
+        let qualityNum = 0.9
+        if (currentSettings.quality === 'high') qualityNum = 1.0
+        if (currentSettings.quality === 'medium') qualityNum = 0.8
+        if (currentSettings.quality === 'low') qualityNum = 0.6
+
+        const dataUrl = canvas.toDataURL(mimeType, qualityNum)
+        exportedData.push({ name: photo.name, dataUrl })
+
+        setProgress(Math.round(((i + 1) / exportPhotos.length) * 100))
+      }
+
+      const filePaths = await window.api.savePhotoBatch(exportedData)
+      if (filePaths && filePaths.length > 0) {
+        setExportedFilePath(filePaths[0]) // just show the first one or directory
+        setExportComplete(true)
+      } else {
+        setIsExporting(false) // user cancelled
+      }
+    } catch (err) {
+      console.error('Failed to export stills:', err)
+      setIsExporting(false)
+    }
+  }
+
   const handleExportChunk = async (chunk: Uint8Array): Promise<void> => {
     await window.electron.ipcRenderer.invoke('save-video-chunk', chunk)
   }
@@ -88,7 +226,8 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
         format,
         currentSettings.codec,
         currentSettings.quality,
-        currentSettings.hwAccel
+        currentSettings.hwAccel,
+        currentSettings.fps
       )
 
       if (filePath) {
@@ -172,6 +311,7 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
 
   return (
     <div
+      ref={overlayRef}
       className="modal-overlay exportmodal-style-1"
       onClick={!isExporting || exportComplete ? onClose : undefined}
     >
@@ -185,7 +325,7 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
       )}
       <div
         ref={modalRef}
-        className={`modal-content exportmodal-style-2 ${isExporting && generatePost ? 'split-screen' : ''}`}
+        className={`modal-content exportmodal-style-2 ${isExporting && generatePost ? 'three-panel' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div
@@ -357,6 +497,16 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
                 </div>
               </div>
             </div>
+
+            {/* Far Right Pane - Meta AI */}
+            <div className="export-modal-far-right-pane">
+              <div className="ai-copilot-header">
+                <div className="modal-header-title">
+                  {appMode === 'stills' ? 'Batch Export Photos' : 'Export Settings'}
+                </div>
+              </div>
+              <webview src="https://www.meta.ai/" className="meta-ai-webview" />
+            </div>
           </div>
         ) : (
           // Standard Export Layout
@@ -472,32 +622,53 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
                       )}
                     </div>
 
-                    <div>
-                      <div className="exportmodal-style-10">Aspect Ratio</div>
-                      <div className="exportmodal-style-11">
-                        {aspectRatios.map((ar) => (
-                          <div
-                            key={ar.id}
-                            onClick={() => setExportSettings({ aspectRatio: ar.id as any })}
-                            className={`aspect-ratio-box ${currentSettings.aspectRatio === ar.id ? 'active' : ''}`}
-                          >
-                            <div className="aspect-ratio-icon">{ar.icon}</div>
-                            <div className="exportmodal-style-12">
-                              <div className="aspect-ratio-name">{ar.name}</div>
-                              <div className="exportmodal-style-13">
-                                {getDims(ar.id, currentSettings.resolution)}
+                    {appMode === 'video' && (
+                      <div>
+                        <div className="exportmodal-style-10">Aspect Ratio</div>
+                        <div className="exportmodal-style-11">
+                          {aspectRatios.map((ar) => (
+                            <div
+                              key={ar.id}
+                              onClick={() => setExportSettings({ aspectRatio: ar.id as any })}
+                              className={`aspect-ratio-box ${currentSettings.aspectRatio === ar.id ? 'active' : ''}`}
+                            >
+                              <div className="aspect-ratio-icon">{ar.icon}</div>
+                              <div className="exportmodal-style-12">
+                                <div className="aspect-ratio-name">{ar.name}</div>
+                                <div className="exportmodal-style-13">
+                                  {getDims(ar.id, currentSettings.resolution)}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {appMode === 'stills' && (
+                      <div>
+                        <div className="exportmodal-style-14 ai-copilot-settings-label">
+                          Watermark Text (Optional)
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="e.g. © 2026 My Studio"
+                          className="settings-input exportmodal-style-15"
+                          value={watermark}
+                          onChange={(e) => setWatermark(e.target.value)}
+                        />
+                        <div className="exportmodal-style-16 watermark-note">
+                          This text will be burned into the bottom-right corner of all exported
+                          photos.
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="export-settings-col">
                     <div className="exportmodal-style-18 export-resolution-container">
                       <div className="exportmodal-style-19">
-                        <div className="exportmodal-style-14">Resolution</div>
+                        <div className="exportmodal-style-14">Long-Edge Resolution</div>
                         <select
                           aria-label="Resolution"
                           className="settings-input exportmodal-style-15"
@@ -506,78 +677,89 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
                             setExportSettings({ resolution: parseInt(e.target.value, 10) as any })
                           }
                         >
-                          <option value={720}>720p (HD)</option>
-                          <option value={1080}>1080p (FHD)</option>
-                          <option value={1440}>1440p (2K)</option>
-                          <option value={2160}>2160p (4K)</option>
+                          {appMode === 'stills' && <option value={0}>Original Size</option>}
+                          <option value={720}>720px</option>
+                          <option value={1080}>1080px (FHD / Instagram)</option>
+                          <option value={1440}>1440px</option>
+                          <option value={2048}>2048px (Facebook High-Res)</option>
+                          <option value={2160}>2160px (4K)</option>
                         </select>
                       </div>
-                      <div className="exportmodal-style-19">
-                        <div className="exportmodal-style-14">Framerate (FPS)</div>
-                        <select
-                          aria-label="Framerate"
-                          className="settings-input exportmodal-style-15"
-                          value={currentSettings.fps}
-                          onChange={(e) =>
-                            setExportSettings({ fps: parseInt(e.target.value, 10) as any })
-                          }
-                        >
-                          <option value={24}>24 fps (Cinematic)</option>
-                          <option value={30}>30 fps (Standard)</option>
-                          <option value={60}>60 fps (Smooth)</option>
-                        </select>
-                      </div>
+
+                      {appMode === 'video' && (
+                        <div className="exportmodal-style-19">
+                          <div className="exportmodal-style-14">Framerate (FPS)</div>
+                          <select
+                            aria-label="Framerate"
+                            className="settings-input exportmodal-style-15"
+                            value={currentSettings.fps}
+                            onChange={(e) =>
+                              setExportSettings({ fps: parseInt(e.target.value, 10) as any })
+                            }
+                          >
+                            <option value={24}>24 fps (Cinematic)</option>
+                            <option value={30}>30 fps (Standard)</option>
+                            <option value={60}>60 fps (Smooth)</option>
+                          </select>
+                        </div>
+                      )}
                     </div>
 
                     <div className="exportmodal-style-20">
-                      <div className="exportmodal-style-14">Format (Container)</div>
+                      <div className="exportmodal-style-14">Format</div>
                       <select
                         aria-label="Format"
                         className="settings-input exportmodal-style-15"
                         value={currentSettings.format}
                         onChange={(e) => {
                           const newFormat = e.target.value as any
-                          let newCodec = currentSettings.codec
-                          if (newFormat === 'webm') newCodec = 'vp9'
-                          else if (newFormat === 'avi') newCodec = 'mpeg4'
-                          else if (newFormat === 'mp4' && !['h264', 'h265'].includes(newCodec))
-                            newCodec = 'h264'
-                          else if (newFormat === 'mkv' && !['h264', 'h265'].includes(newCodec))
-                            newCodec = 'h264'
-                          else if (
-                            newFormat === 'mov' &&
-                            !['h264', 'h265', 'prores'].includes(newCodec)
-                          )
-                            newCodec = 'h264'
-                          setExportSettings({ format: newFormat, codec: newCodec })
+                          setExportSettings({ format: newFormat })
                         }}
                       >
-                        <option value="mp4">MP4 (Social Media Standard)</option>
-                        <option value="mov">MOV (Apple / Pro Editing)</option>
-                        <option value="mkv">MKV (Robust Archive)</option>
-                        <option value="webm">WebM (Fast Render / Web)</option>
-                        <option value="avi">AVI (Legacy)</option>
-                      </select>
-
-                      <div className="exportmodal-style-14 exportmodal-style-21">Codec</div>
-                      <select
-                        aria-label="Codec"
-                        className="settings-input exportmodal-style-15"
-                        value={currentSettings.codec}
-                        onChange={(e) => setExportSettings({ codec: e.target.value as any })}
-                      >
-                        {['mp4', 'mov', 'mkv'].includes(currentSettings.format) && (
+                        {appMode === 'video' ? (
                           <>
-                            <option value="h264">H.264 (Maximum Compatibility)</option>
-                            <option value="h265">H.265 / HEVC (High Quality, Small Size)</option>
+                            <option value="mp4">MP4 (Social Media Standard)</option>
+                            <option value="mov">MOV (Apple / Pro Editing)</option>
+                            <option value="mkv">MKV (Robust Archive)</option>
+                            <option value="webm">WebM (Fast Render / Web)</option>
+                            <option value="avi">AVI (Legacy)</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="jpeg">JPEG (High Compatibility)</option>
+                            <option value="png">PNG (Lossless, Larger File)</option>
+                            <option value="webp">WebP (Modern, Small Size)</option>
                           </>
                         )}
-                        {currentSettings.format === 'mov' && (
-                          <option value="prores">Apple ProRes (Lossless, Huge File)</option>
-                        )}
-                        {currentSettings.format === 'webm' && <option value="vp9">VP9</option>}
-                        {currentSettings.format === 'avi' && <option value="mpeg4">MPEG-4</option>}
                       </select>
+
+                      {appMode === 'video' && (
+                        <>
+                          <div className="exportmodal-style-14 exportmodal-style-21">Codec</div>
+                          <select
+                            aria-label="Codec"
+                            className="settings-input exportmodal-style-15"
+                            value={currentSettings.codec}
+                            onChange={(e) => setExportSettings({ codec: e.target.value as any })}
+                          >
+                            {['mp4', 'mov', 'mkv'].includes(currentSettings.format) && (
+                              <>
+                                <option value="h264">H.264 (Maximum Compatibility)</option>
+                                <option value="h265">
+                                  H.265 / HEVC (High Quality, Small Size)
+                                </option>
+                              </>
+                            )}
+                            {currentSettings.format === 'mov' && (
+                              <option value="prores">Apple ProRes (Lossless, Huge File)</option>
+                            )}
+                            {currentSettings.format === 'webm' && <option value="vp9">VP9</option>}
+                            {currentSettings.format === 'avi' && (
+                              <option value="mpeg4">MPEG-4</option>
+                            )}
+                          </select>
+                        </>
+                      )}
 
                       <div className="exportmodal-style-14 exportmodal-style-21">Quality</div>
                       <select
@@ -607,13 +789,13 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
                         </label>
                       </div>
 
-                      {currentSettings.format !== 'webm' && (
+                      {appMode === 'video' && currentSettings.format !== 'webm' && (
                         <div className="exportmodal-style-16 exportmodal-style-21">
                           Note: This format requires FFmpeg conversion after rendering. It may take
                           slightly longer.
                         </div>
                       )}
-                      {currentSettings.codec === 'h265' && (
+                      {appMode === 'video' && currentSettings.codec === 'h265' && (
                         <div className="exportmodal-style-16 exportmodal-style-25">
                           Warning: H.265 (HEVC) may not play correctly on older devices or certain
                           web browsers.
@@ -623,8 +805,11 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
                   </div>
                 </div>
 
-                <button onClick={handleExport} className="exportmodal-style-17 export-start-btn">
-                  Start Export
+                <button
+                  onClick={appMode === 'stills' ? handleStillsExport : handleExport}
+                  className="exportmodal-style-17 export-start-btn"
+                >
+                  {appMode === 'stills' ? 'Export Photos' : 'Start Export'}
                 </button>
               </>
             )}

@@ -1,7 +1,19 @@
 /* eslint-disable */
 import './AudioBrowserModal.css'
 import React, { useState, useRef, useEffect } from 'react'
-import { X, Search, Play, Pause, Plus, AlertCircle, Music, Zap, Check } from 'lucide-react'
+import {
+  X,
+  Search,
+  Play,
+  Pause,
+  Plus,
+  AlertCircle,
+  Music,
+  Zap,
+  Check,
+  Filter,
+  RefreshCw
+} from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
 interface FreesoundHit {
   id: number
@@ -38,6 +50,10 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [downloadedItems, setDownloadedItems] = useState<Set<string | number>>(new Set())
+  const [showFilters, setShowFilters] = useState(false)
+  const [sortBy, setSortBy] = useState('relevance')
+  const [minDuration, setMinDuration] = useState('')
+  const [maxDuration, setMaxDuration] = useState('')
   const { addMedia, aiKeys, audioCategories, addAudioCategory, removeAudioCategory } =
     useProjectStore()
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -63,9 +79,19 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
       setError(null)
       try {
         const cleanToken = encodeURIComponent(freesoundKey.trim())
-        const res = await fetch(
-          `https://freesound.org/apiv2/search/text/?query=${encodeURIComponent(search)}&token=${cleanToken}&fields=id,name,tags,previews,duration,username,license`
-        )
+        let url = `https://freesound.org/apiv2/search/text/?query=${encodeURIComponent(search)}&token=${cleanToken}&fields=id,name,tags,previews,duration,username,license&page_size=50`
+
+        if (sortBy === 'popular') url += '&sort=downloads_desc'
+        else if (sortBy === 'duration_asc') url += '&sort=duration_asc'
+        else if (sortBy === 'duration_desc') url += '&sort=duration_desc'
+
+        if (minDuration || maxDuration) {
+          const min = minDuration || '0'
+          const max = maxDuration || '*'
+          url += `&filter=duration:[${min} TO ${max}]`
+        }
+
+        const res = await fetch(url)
         if (!res.ok) {
           const errorText = await res.text()
           throw new Error(`API returned ${res.status}: ${errorText}`)
@@ -86,9 +112,19 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(
-          `https://api.jamendo.com/v3.0/tracks/?client_id=${jamendoKey}&format=json&limit=20&search=${encodeURIComponent(search)}`
-        )
+        let url = `https://api.jamendo.com/v3.0/tracks/?client_id=${jamendoKey}&format=json&limit=50&search=${encodeURIComponent(search)}`
+
+        if (sortBy === 'popular') url += '&order=popularity_total'
+        else if (sortBy === 'duration_asc') url += '&order=duration'
+        else if (sortBy === 'duration_desc') url += '&order=duration_desc'
+
+        if (minDuration || maxDuration) {
+          const min = minDuration ? parseInt(minDuration) : 0
+          const max = maxDuration ? parseInt(maxDuration) : 99999
+          url += `&durationbetween=${min}_${max}`
+        }
+
+        const res = await fetch(url)
         if (!res.ok) {
           const errorText = await res.text()
           throw new Error(`API returned ${res.status}: ${errorText}`)
@@ -191,8 +227,8 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
         attribution
       }
     ])
-    
-    setDownloadedItems(prev => new Set(prev).add(audio.id))
+
+    setDownloadedItems((prev) => new Set(prev).add(audio.id))
   }
   const handleAddMusic = (track: JamendoHit): void => {
     if (!track.audio) return
@@ -215,8 +251,8 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
         attribution
       }
     ])
-    
-    setDownloadedItems(prev => new Set(prev).add(track.id))
+
+    setDownloadedItems((prev) => new Set(prev).add(track.id))
   }
   const handleCategoryClick = (category: string): void => {
     setSearch(category)
@@ -350,7 +386,62 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
                 >
                   {loading ? 'Searching...' : 'Search'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`abm-style-25 abm-filter-toggle ${showFilters ? 'abm-cat-btn-active' : 'abm-cat-btn-inactive'}`}
+                  title="Toggle Filters"
+                >
+                  <Filter size={16} />
+                </button>
               </div>
+              {showFilters && (
+                <div className="abm-filters-row">
+                  <div className="abm-filter-group">
+                    <label>Sort By:</label>
+                    <select
+                      aria-label="Sort By"
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                    >
+                      <option value="relevance">Relevance</option>
+                      <option value="popular">Most Popular</option>
+                      <option value="duration_asc">Shortest First</option>
+                      <option value="duration_desc">Longest First</option>
+                    </select>
+                  </div>
+                  <div className="abm-filter-group">
+                    <label>Duration (sec):</label>
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={minDuration}
+                      onChange={(e) => setMinDuration(e.target.value)}
+                      min="0"
+                    />
+                    <span>to</span>
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={maxDuration}
+                      onChange={(e) => setMaxDuration(e.target.value)}
+                      min="0"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="abm-filter-clear"
+                    onClick={() => {
+                      setSortBy('relevance')
+                      setMinDuration('')
+                      setMaxDuration('')
+                    }}
+                    title="Clear Filters"
+                  >
+                    <RefreshCw size={14} /> Clear
+                  </button>
+                </div>
+              )}
             </form>
 
             {/* Results Area */}
@@ -477,7 +568,11 @@ export function AudioBrowserModal({ onClose }: { onClose: () => void }): React.R
                       title="Add to Timeline"
                       aria-label="Add to Timeline"
                       onClick={() => handleAddSfx(audio)}
-                      disabled={!audio.previews || !audio.previews['preview-hq-mp3'] || downloadedItems.has(audio.id)}
+                      disabled={
+                        !audio.previews ||
+                        !audio.previews['preview-hq-mp3'] ||
+                        downloadedItems.has(audio.id)
+                      }
                       className={`abm-style-48 ${!audio.previews || !audio.previews['preview-hq-mp3'] ? 'abm-disabled' : 'abm-enabled'}`}
                     >
                       {downloadedItems.has(audio.id) ? (

@@ -110,8 +110,9 @@ export function VFXBrowserModal({ onClose }: { onClose: () => void }): React.Rea
     try {
       if (activeTab === 'overlays') {
         if (!aiKeys?.pixabay) throw new Error('Please add a Pixabay API Key in Settings.')
+        const safeQuery = query.length > 100 ? query.substring(0, 100) : query
         const res = await fetch(
-          `https://pixabay.com/api/videos/?key=${aiKeys.pixabay}&q=${encodeURIComponent(query)}&per_page=100`
+          `https://pixabay.com/api/videos/?key=${aiKeys.pixabay}&q=${encodeURIComponent(safeQuery)}&per_page=100`
         )
         if (!res.ok) throw new Error('Pixabay API error')
         const data = await res.json()
@@ -413,13 +414,19 @@ export function VFXBrowserModal({ onClose }: { onClose: () => void }): React.Rea
                     className={`vfxbrowsermodal-style-33 list-item ${selectedEffect?.id === fx.id ? 'active' : ''}`}
                   >
                     {fx.type === 'overlay' ? (
-                      <video
-                        src={`${fx.url}#t=0.1`}
-                        preload="metadata"
-                        muted
-                        playsInline
-                        className="vfxbrowsermodal-style-34"
-                      />
+                      fx.url ? (
+                        <video
+                          src={`${fx.url}#t=0.1`}
+                          preload="metadata"
+                          muted
+                          playsInline
+                          className="vfxbrowsermodal-style-34"
+                        />
+                      ) : (
+                        <div className="vfxbrowsermodal-style-34 flex items-center justify-center bg-gray-900 text-gray-500">
+                          No Preview
+                        </div>
+                      )
                     ) : fx.thumbnail ? (
                       <EffectThumbnail
                         src={fx.thumbnail}

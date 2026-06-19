@@ -155,3 +155,41 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+.mode-toggle {
+  display: flex;
+  background-color: var(--color-bg-darkest);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.mode-toggle-btn {
+  padding: 4px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-toggle-btn.active {
+  background-color: var(--color-bg-light);
+  color: var(--color-text-main);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.titlebar-style-divider {
+  height: 1px;
+  background-color: var(--color-border);
+  margin: 4px 0;
+}
+
+.titlebar-storyboard-btn {
+  background: var(--color-primary);
+  margin-right: 8px;
+}
+
+.titlebar-storyboard-btn-icon {
+  margin-right: 6px;
+}

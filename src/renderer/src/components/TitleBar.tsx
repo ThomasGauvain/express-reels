@@ -1,21 +1,43 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import './TitleBar.css'
 import { Minimize, Maximize, X, Film } from 'lucide-react'
 import { useProjectStore } from '../store/projectStore'
+import { useShallow } from 'zustand/react/shallow'
 import { AuthModal } from './AuthModal'
 import { SettingsModal } from './SettingsModal'
 import { ExportModal } from './ExportModal'
+import { StoryboardModal } from './StoryboardModal'
 
 export function TitleBar(): React.ReactElement {
   const [openMenu, setOpenMenu] = useState<'File' | 'Edit' | 'Settings' | 'User' | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
+  const [isStoryboardOpen, setIsStoryboardOpen] = useState(false)
   const titlebarRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const centerRef = useRef<HTMLDivElement>(null)
   const rightRef = useRef<HTMLDivElement>(null)
-  const { past, future, newProject, loadProject, currentUser, logout } = useProjectStore()
+  const {
+    past,
+    future,
+    newProject,
+    loadProject,
+    currentUser,
+    logout,
+    appMode
+  } = useProjectStore(
+    useShallow((s) => ({
+      past: s.past,
+      future: s.future,
+      newProject: s.newProject,
+      loadProject: s.loadProject,
+      currentUser: s.currentUser,
+      logout: s.logout,
+      appMode: s.appMode
+    }))
+  )
   useEffect(() => {
     titlebarRef.current?.style.setProperty('-webkit-app-region', 'drag')
     menuRef.current?.style.setProperty('-webkit-app-region', 'no-drag')
@@ -53,7 +75,21 @@ export function TitleBar(): React.ReactElement {
         autoAdjustTargetDuration: state.autoAdjustTargetDuration
       }
       const jsonStr = JSON.stringify(projectData, null, 2)
-      await window.api.saveProject(jsonStr)
+
+      // Emergency Backup: Automatically save to settings data folder without needing a dialog
+      try {
+        await window.api.writeSettings('express-reels-emergency-backup', jsonStr)
+        console.log('Emergency backup saved to settings')
+      } catch (backupErr) {
+        console.error('Backup failed', backupErr)
+      }
+
+      const resultPath = await window.api.saveProject(jsonStr)
+      if (resultPath) {
+        alert('Project saved successfully!\n' + resultPath)
+      } else {
+        alert('Project save was cancelled or failed.')
+      }
     } catch (e) {
       alert(`Failed to save project: ${e instanceof Error ? e.message : String(e)}`)
       console.error('Save Project Error:', e)
@@ -120,6 +156,20 @@ export function TitleBar(): React.ReactElement {
                   className="titlebar-style-8"
                 >
                   Save Project...
+                </div>
+                <div className="titlebar-style-divider" />
+                <div
+                  onClick={() => {
+                    newProject()
+                    setOpenMenu(null)
+                  }}
+                  onMouseOver={(e) =>
+                    (e.currentTarget.style.backgroundColor = 'var(--color-bg-light)')
+                  }
+                  onMouseOut={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                  className="titlebar-style-8"
+                >
+                  Close Project
                 </div>
               </div>
             )}
@@ -225,10 +275,30 @@ export function TitleBar(): React.ReactElement {
       </div>
 
       <div ref={centerRef} className="titlebar-center titlebar-style-22">
-        {/* Toggle removed per user request */}
+        <div className="mode-toggle">
+          <div
+            className={`mode-toggle-btn ${appMode === 'video' ? 'active' : ''}`}
+            onClick={() => useProjectStore.getState().setAppMode('video')}
+          >
+            Video
+          </div>
+          <div
+            className={`mode-toggle-btn ${appMode === 'stills' ? 'active' : ''}`}
+            onClick={() => useProjectStore.getState().setAppMode('stills')}
+          >
+            Stills
+          </div>
+        </div>
       </div>
 
       <div ref={rightRef} className="titlebar-right titlebar-style-23">
+        <button
+          onClick={() => setIsStoryboardOpen(true)}
+          className="titlebar-style-24 titlebar-storyboard-btn"
+        >
+          <Film size={14} className="titlebar-storyboard-icon" />
+          Storyboard
+        </button>
         <button onClick={() => setShowExportModal(true)} className="titlebar-style-24">
           Export
         </button>
@@ -243,9 +313,14 @@ export function TitleBar(): React.ReactElement {
         </button>
       </div>
 
-      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
-      {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} />}
-      {showExportModal && <ExportModal onClose={() => setShowExportModal(false)} />}
+      {showAuthModal &&
+        createPortal(<AuthModal onClose={() => setShowAuthModal(false)} />, document.body)}
+      {showSettingsModal &&
+        createPortal(<SettingsModal onClose={() => setShowSettingsModal(false)} />, document.body)}
+      {showExportModal &&
+        createPortal(<ExportModal onClose={() => setShowExportModal(false)} />, document.body)}
+      {isStoryboardOpen &&
+        createPortal(<StoryboardModal onClose={() => setIsStoryboardOpen(false)} />, document.body)}
     </div>
   )
 }

@@ -3,8 +3,53 @@ import { useEffect, useRef } from 'react'
 import { useProjectStore } from '../store/projectStore'
 import { calculateKenBurnsTransform } from '../lib/kenBurns'
 
-interface AudioElementWithGain extends HTMLAudioElement {
-  __gain?: GainNode
+function audioBufferToWav(buffer: AudioBuffer): Uint8Array {
+  const numChannels = buffer.numberOfChannels
+  const sampleRate = buffer.sampleRate
+  const format = 1 // PCM
+  const bitDepth = 16
+
+  const result = new Uint8Array(44 + buffer.length * numChannels * 2)
+  const view = new DataView(result.buffer)
+
+  const writeString = (offset: number, string: string): void => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i))
+    }
+  }
+
+  writeString(0, 'RIFF')
+  view.setUint32(4, 36 + buffer.length * numChannels * 2, true)
+  writeString(8, 'WAVE')
+  writeString(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, format, true)
+  view.setUint16(22, numChannels, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * numChannels * 2, true)
+  view.setUint16(32, numChannels * 2, true)
+  view.setUint16(34, bitDepth, true)
+  writeString(36, 'data')
+  view.setUint32(40, buffer.length * numChannels * 2, true)
+
+  const offset = 44
+  const channelData: Float32Array[] = []
+  for (let i = 0; i < numChannels; i++) {
+    channelData.push(buffer.getChannelData(i))
+  }
+
+  let writeIndex = offset
+  for (let i = 0; i < buffer.length; i++) {
+    for (let channel = 0; channel < numChannels; channel++) {
+      let sample = channelData[channel][i]
+      sample = Math.max(-1, Math.min(1, sample))
+      sample = sample < 0 ? sample * 0x8000 : sample * 0x7fff
+      view.setInt16(writeIndex, sample, true)
+      writeIndex += 2
+    }
+  }
+
+  return result
 }
 
 export function ExportEngine({
@@ -21,14 +66,10 @@ export function ExportEngine({
   const { clips, mediaLibrary, tracks, exportSettings, targetDuration } = useProjectStore.getState()
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const videoRefs = useRef<Record<string, HTMLVideoElement>>({})
-  const audioRefs = useRef<Record<string, AudioElementWithGain>>({})
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const animationFrameIdRef = useRef<number>(0)
+  const videoRefs = useRef<Record<string, HTMLVideoElement | HTMLImageElement>>({})
   const isRunning = useRef(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
-  // Calculate resolution
   const width =
     exportSettings?.aspectRatio === '16:9'
       ? 1920
@@ -50,7 +91,9 @@ export function ExportEngine({
     if (!path) return ''
     if (path.startsWith('http') || path.startsWith('data:') || path.startsWith('file://'))
       return path
-    return `file:///${path.replace(/\\/g, '/')}`
+    return path.startsWith('blob:') || path.startsWith('http:')
+      ? path
+      : `file:///${path.replace(/\\/g, '/')}`
   }
 
   const calculatedDuration = Math.max(...clips.map((c) => c.startTime + c.duration), 1)
@@ -66,13 +109,13 @@ export function ExportEngine({
       try {
         const container = document.createElement('div')
         container.style.position = 'fixed'
-        container.style.top = '10px' // Place it in the viewport
+        container.style.top = '10px'
         container.style.left = '10px'
-        container.style.width = '100px' // Make it large enough
+        container.style.width = '100px'
         container.style.height = '100px'
-        container.style.opacity = '0.05' // Ensure Chrome considers it visible
+        container.style.opacity = '0.01' // Invisible to user, but kept in VRAM
         container.style.pointerEvents = 'none'
-        container.style.zIndex = '9998' // Just behind the modal's 9999 z-index
+        container.style.zIndex = '9998'
         document.body.appendChild(container)
         containerRef.current = container
 
@@ -82,27 +125,11 @@ export function ExportEngine({
         const ctx = canvas.getContext('2d')
         if (!ctx) throw new Error('Canvas context missing')
 
-        // 1. Setup AudioContext and Destination
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
-
-        // Immediately suspend the audio context so its internal clock doesn't tick while we load media!
-        // This prevents the massive timestamp desync that causes ffmpeg to pad the beginning with frozen frames.
-        if (audioCtx.state === 'running') {
-          audioCtx.suspend()
-        }
-
-        const destNode = audioCtx.createMediaStreamDestination()
-
-        // Draw a dummy frame to initialize the canvas stream properly
-        // This prevents the "frozen first few seconds" Chrome bug with MediaRecorder
-        ctx.fillStyle = '#000000'
-        ctx.fillRect(0, 0, width, height)
-        const canvasStream = canvas.captureStream(30) // 30 FPS
-
-        // Setup audio graph
         const visualClips = [
           ...clips.filter(
-            (c) => !c.effect && tracks.find((t) => t.id === c.trackId)?.type === 'video'
+            (c) =>
+              !c.effect &&
+              ['video', 'text'].includes(tracks.find((t) => t.id === c.trackId)?.type || '')
           )
         ].sort((a, b) => {
           return (
@@ -110,25 +137,18 @@ export function ExportEngine({
             tracks.findIndex((t) => t.id === a.trackId)
           )
         })
-        const audioClips = clips.filter(
-          (c) => tracks.find((t) => t.id === c.trackId)?.type === 'audio'
-        )
 
-        // Preload videos
-        const promises = visualClips.map((clip) => {
+        const audioClips = clips.filter((c) => {
+          const type = tracks.find((t) => t.id === c.trackId)?.type
+          return type === 'audio' || type === 'video'
+        })
+
+        // 1. Preload Videos & Images
+        onProgress(2)
+        const loadPromises = visualClips.map((clip) => {
           return new Promise<void>((resolve) => {
-            let resolved = false
-            const safeResolve = (): void => {
-              if (!resolved) {
-                resolved = true
-                resolve()
-              }
-            }
-            // Failsafe timeout to prevent infinite hang if media fails to load without error
-            setTimeout(safeResolve, 5000)
-
             const media = mediaLibrary.find((m) => m.id === clip.mediaId)
-            if (!media || media.type === 'audio') return safeResolve()
+            if (!media || media.type === 'audio') return resolve()
             const el = document.createElement(media.type === 'image' ? 'img' : 'video') as any
             el.src = getMediaUrl(media.path)
             el.crossOrigin = 'anonymous'
@@ -140,334 +160,366 @@ export function ExportEngine({
               el.style.objectFit = 'cover'
               el.muted = true
               el.playsInline = true
-              el.loop = true // Ensure seamless native looping for overlays
-
-              const handleSeek = (): void => {
-                el.onseeked = null
-                safeResolve()
-              }
-              el.onloadeddata = () => {
-                if (clip.sourceOffset > 0) {
-                  el.onseeked = handleSeek
-                  el.currentTime = clip.sourceOffset
-                } else {
-                  safeResolve()
-                }
-              }
-              el.onerror = safeResolve
+              el.onloadeddata = () => resolve()
+              el.onerror = () => resolve()
             } else {
-              el.onload = safeResolve
-              el.onerror = safeResolve
+              el.onload = () => resolve()
+              el.onerror = () => resolve()
             }
             videoRefs.current[clip.id] = el
           })
         })
-
-        // Preload audios
-        const audioPromises = audioClips.map((clip) => {
-          return new Promise<void>((resolve) => {
-            let resolved = false
-            const safeResolve = (): void => {
-              if (!resolved) {
-                resolved = true
-                resolve()
-              }
-            }
-            setTimeout(safeResolve, 5000)
-
-            const media = mediaLibrary.find((m) => m.id === clip.mediaId)
-            if (!media) return safeResolve()
-
-            const srcUrl = getMediaUrl(media.path)
-            const el = new Audio(srcUrl) as AudioElementWithGain & {
-              __source?: MediaElementAudioSourceNode
-            }
-            el.crossOrigin = 'anonymous'
-
-            // Create Web Audio graph immediately to avoid race conditions with onloadeddata
-            const source = audioCtx.createMediaElementSource(el)
-            const gain = audioCtx.createGain()
-            const config = clip.audioConfig || {
-              volume: 1,
-              bass: 0,
-              mid: 0,
-              treble: 0,
-              pan: 0,
-              compression: false,
-              reverb: false
-            }
-
-            gain.gain.value = config.volume
-            source.connect(gain)
-            gain.connect(destNode)
-
-            el.__gain = gain
-            el.__source = source // Prevent V8 garbage collection bug!
-            audioRefs.current[clip.id] = el
-
-            el.oncanplay = safeResolve
-            el.onerror = safeResolve
-          })
-        })
-
-        await Promise.all([...promises, ...audioPromises])
-
+        await Promise.all(loadPromises)
         if (aborted) return
 
-        // Pre-play videos that start at 0 to prevent the massive drift/seek loop at the beginning
-        const prePlayPromises: Promise<void>[] = []
-        const safePlay = async (el: HTMLMediaElement): Promise<void> => {
-          try {
-            await Promise.race([
-              el.play(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
-            ])
-          } catch {
-            // Ignore play errors or timeouts
-          }
+        // 2. Setup VideoEncoder (Offline Video Rendering)
+        onProgress(5)
+        const fps = exportSettings?.fps || 30
+        const totalFrames = Math.ceil(maxDuration * fps)
+
+        // Force H.264 Annex B format for flawlessly concatenable raw chunks
+        const codecStr = 'avc1.4d002a'
+        const videoConfig: VideoEncoderConfig = {
+          codec: codecStr,
+          width,
+          height,
+          framerate: fps,
+          bitrate: exportSettings?.quality === 'high' ? 15_000_000 : 8_000_000,
+          hardwareAcceleration: exportSettings?.hwAccel ? 'prefer-hardware' : 'prefer-software',
+          avc: { format: 'annexb' } // CRITICAL: Raw H.264 stream without MP4 boxes
         }
 
-        for (const clip of visualClips) {
-          if (clip.startTime === 0) {
-            const el = videoRefs.current[clip.id] as any
-            if (el && el.tagName === 'VIDEO') {
-              prePlayPromises.push(safePlay(el))
-            }
-          }
-        }
-        await Promise.all(prePlayPromises)
-
-        // Resume the audio context precisely when the export is about to start
-        if (audioCtx.state === 'suspended') {
-          await audioCtx.resume()
-        }
-
-        // 2. Setup MediaRecorder
-        const masterStream = new MediaStream([
-          ...canvasStream.getVideoTracks(),
-          ...destNode.stream.getAudioTracks()
-        ])
-
-        const supportedTypes = [
-          'video/webm; codecs=h264',
-          'video/webm; codecs=avc1',
-          'video/mp4; codecs=avc1',
-          'video/webm; codecs=vp8' // Software fallback
-        ]
-
-        let selectedMimeType = 'video/webm; codecs=vp8'
-        for (const mt of supportedTypes) {
-          if (MediaRecorder.isTypeSupported(mt)) {
-            selectedMimeType = mt
-            break
-          }
-        }
-
-        const recorder = new MediaRecorder(masterStream, {
-          mimeType: selectedMimeType,
-          videoBitsPerSecond: 10000000 // 10 Mbps
-        })
-        recorder.ondataavailable = async (e) => {
-          if (e.data.size > 0) {
-            const buffer = await e.data.arrayBuffer()
+        let encoderError: Error | null = null
+        const videoEncoder = new VideoEncoder({
+          output: (chunk) => {
+            if (aborted) return
+            const buffer = new ArrayBuffer(chunk.byteLength)
+            chunk.copyTo(buffer)
             onChunk(new Uint8Array(buffer))
-          }
-        }
-        recorder.onstop = () => {
-          onComplete()
-        }
-
-        mediaRecorderRef.current = recorder
-
-        const startTime = performance.now()
-        const hasStarted = true
-        let isStopping = false
-
-        // Start with a 1000ms timeslice to avoid flooding the IPC channel and locking up the main thread
-        recorder.start(1000)
-
-        // 3. Render Loop
-        let lastProgress = -1
-        Object.entries(audioRefs.current).forEach(([clipId, el]) => {
-          const clip = audioClips.find((c) => c.id === clipId)
-          if (!clip || clip.startTime > 0) {
-            el.pause()
+          },
+          error: (e) => {
+            encoderError = e
           }
         })
 
-        const drawFrameAt = (time: number): void => {
+        const isSupported = await VideoEncoder.isConfigSupported(videoConfig)
+        if (!isSupported.supported) {
+          throw new Error('VideoEncoder configuration is not supported on this hardware.')
+        }
+
+        videoEncoder.configure(videoConfig)
+
+        // 3. Render Offline Video Loop
+        for (let frameIndex = 0; frameIndex <= totalFrames; frameIndex++) {
+          if (aborted) break
+          if (encoderError) throw encoderError
+
+          const t = frameIndex / fps
+
           ctx.clearRect(0, 0, width, height)
           ctx.fillStyle = '#000000'
           ctx.fillRect(0, 0, width, height)
 
-          // Draw visual clips
-          for (const clip of visualClips) {
+          const activeClips = visualClips.filter(
+            (clip) => t >= clip.startTime && t < clip.startTime + (clip.duration || 5)
+          )
+
+          // Wait for all video elements to seek perfectly to the exact target frame
+          await Promise.all(
+            activeClips.map((clip) => {
+              const el = videoRefs.current[clip.id] as any
+              if (!el || el.tagName !== 'VIDEO') return Promise.resolve()
+
+              let localTime = t - clip.startTime + (clip.sourceOffset || 0)
+              if (el.duration > 0) {
+                localTime = localTime % el.duration
+              }
+
+              // Only seek if we are drifted to avoid unnecessary stalls, but ensure absolute perfection
+              if (Math.abs(el.currentTime - localTime) > 0.05) {
+                return new Promise<void>((resolve) => {
+                  // Failsafe timeout
+                  const timeoutId = setTimeout(() => {
+                    el.onseeked = null
+                    resolve()
+                  }, 1000)
+
+                  el.onseeked = () => {
+                    clearTimeout(timeoutId)
+                    el.onseeked = null
+                    resolve()
+                  }
+                  el.currentTime = localTime
+                })
+              }
+              return Promise.resolve()
+            })
+          )
+
+          if (aborted) break
+
+          // Draw active clips perfectly
+          for (const clip of activeClips) {
             const el = videoRefs.current[clip.id] as any
-            if (!el) continue
+            const isTextClip = tracks.find((track) => track.id === clip.trackId)?.type === 'text'
+            if (!el && !isTextClip) continue
 
-            let localTime = time - clip.startTime + clip.sourceOffset
-            if (el.tagName === 'VIDEO' && el.duration > 0) {
-              localTime = localTime % el.duration
+            ctx.save()
+
+            // Opacity & Transitions
+            let opacity = 1
+            const clipTime = t - clip.startTime
+            if (clip.fadeIn && clipTime < clip.fadeIn) {
+              opacity = clipTime / clip.fadeIn
             }
-            const isActive = time >= clip.startTime && time < clip.startTime + clip.duration
+            if (clip.fadeOut && clipTime > (clip.duration || 5) - clip.fadeOut) {
+              opacity = ((clip.duration || 5) - clipTime) / clip.fadeOut
+            }
+            ctx.globalAlpha = opacity
 
-            if (isActive) {
-              // Sync video element time
-              if (hasStarted && el.tagName === 'VIDEO') {
-                const lag = localTime - el.currentTime
-                // Maintain massive drift threshold for extreme desyncs
-                const massiveDrift = el.duration === Infinity ? false : Math.abs(lag) > 0.3
-                if (massiveDrift && !el.seeking) {
-                  el.currentTime = el.duration === Infinity ? 0 : localTime
-                } else if (!massiveDrift && !el.seeking) {
-                  // Gentle proportional sync for minor drifts to avoid oscillation
-                  const baseRate = clip.audioConfig?.playbackRate || 1.0
-                  const targetRate = baseRate + lag * 1.5
-                  // Tight clamping prevents the decoder from crashing/stuttering
-                  el.playbackRate = Math.max(0.8, Math.min(1.5, targetRate))
-                }
-                if (el.paused && !el.seeking) el.play().catch(() => {})
-              }
+            // Draw Text Clip
+            const track = tracks.find((t) => t.id === clip.trackId)
+            if (track?.type === 'text' && clip.textProperties) {
+              const textProps = clip.textProperties
 
-              ctx.save()
-
-              // Opacity
-              let opacity = 1
-              const clipTime = time - clip.startTime
-              if (clip.fadeIn && clipTime < clip.fadeIn) {
-                opacity = clipTime / clip.fadeIn
-              }
-              if (clip.fadeOut && clipTime > clip.duration - clip.fadeOut) {
-                opacity = (clip.duration - clipTime) / clip.fadeOut
-              }
-              ctx.globalAlpha = opacity
-
-              // Blending
-              const media = mediaLibrary.find((m) => m.id === clip.mediaId)
-              const targetName = (clip.name || media?.name || '').toLowerCase()
-              if (targetName.includes('overlay')) {
-                ctx.globalCompositeOperation = 'screen'
-              } else {
-                ctx.globalCompositeOperation = 'source-over'
-              }
-
-              // Transform
+              // Apply Ken Burns Transform
               const effect = clip.kenBurnsEffect
               if (effect && effect.keyframes && effect.keyframes.length > 0) {
-                const clipTime = time - clip.startTime
                 const { x, y, zoom: scale, rotation } = calculateKenBurnsTransform(effect, clipTime)
-
-                // Canvas transform: origin is center
                 ctx.translate(width / 2, height / 2)
                 ctx.scale(scale, scale)
                 ctx.translate((x / 100) * width, (y / 100) * height)
                 if (rotation) ctx.rotate((rotation * Math.PI) / 180)
-
-                // Draw image centered
-                const drawW = el.videoWidth || el.naturalWidth || width
-                const drawH = el.videoHeight || el.naturalHeight || height
-
-                const scaleW = width / drawW
-                const scaleH = height / drawH
-                const containScale = Math.min(scaleW, scaleH)
-                const finalW = drawW * containScale
-                const finalH = drawH * containScale
-
-                ctx.drawImage(el, -finalW / 2, -finalH / 2, finalW, finalH)
-              } else {
-                // No effect, just object-fit cover
-                const drawW = el.videoWidth || el.naturalWidth || width
-                const drawH = el.videoHeight || el.naturalHeight || height
-
-                const scaleW = width / drawW
-                const scaleH = height / drawH
-                const containScale = Math.min(scaleW, scaleH)
-                const finalW = drawW * containScale
-                const finalH = drawH * containScale
-
-                ctx.translate(width / 2, height / 2)
-                ctx.drawImage(el, -finalW / 2, -finalH / 2, finalW, finalH)
+                ctx.translate(-width / 2, -height / 2)
               }
+
+              // The Live Preview DOM runs at native logical resolution (1080x1920)
+              // so the fontSize is already exactly 1:1 with the export canvas.
+              const scaledFontSize = textProps.fontSize
+
+              ctx.font = `${textProps.fontWeight} ${scaledFontSize}px "${textProps.fontFamily}"`
+              ctx.fillStyle = textProps.color
+              const align = textProps.textAlign || 'center'
+              ctx.textAlign = align
+              ctx.textBaseline = 'middle'
+              if (textProps.dropShadow?.enabled) {
+                ctx.shadowColor = 'rgba(0,0,0,0.8)'
+                // Shadows should still scale visually if the text is huge, but we'll leave them literal too
+                ctx.shadowOffsetX = textProps.dropShadow.offsetX
+                ctx.shadowOffsetY = textProps.dropShadow.offsetY
+                ctx.shadowBlur = textProps.dropShadow.blur
+              } else {
+                ctx.shadowColor = 'transparent'
+              }
+
+              const lines = textProps.content.split('\n')
+              let maxLineWidth = 0
+              lines.forEach((line) => {
+                const m = ctx.measureText(line)
+                if (m.width > maxLineWidth) maxLineWidth = m.width
+              })
+
+              const lineHeight = scaledFontSize * 1.2
+              const startY = height / 2 - ((lines.length - 1) * lineHeight) / 2
+
+              let startX = width / 2
+              if (align === 'left') startX = width / 2 - maxLineWidth / 2
+              if (align === 'right') startX = width / 2 + maxLineWidth / 2
+
+              lines.forEach((line, index) => {
+                ctx.fillText(line, startX, startY + index * lineHeight)
+              })
 
               ctx.restore()
-            } else {
-              if (el.tagName === 'VIDEO' && !el.paused) el.pause()
+              continue
             }
+
+            // Blending
+            const media = mediaLibrary.find((m) => m.id === clip.mediaId)
+            const targetName = (clip.name || media?.name || '').toLowerCase()
+            if (targetName.includes('overlay')) {
+              ctx.globalCompositeOperation = 'screen'
+            } else {
+              ctx.globalCompositeOperation = 'source-over'
+            }
+
+            // Transform
+            const effect = clip.kenBurnsEffect
+            if (effect && effect.keyframes && effect.keyframes.length > 0) {
+              const { x, y, zoom: scale, rotation } = calculateKenBurnsTransform(effect, clipTime)
+
+              ctx.translate(width / 2, height / 2)
+              ctx.scale(scale, scale)
+              ctx.translate((x / 100) * width, (y / 100) * height)
+              if (rotation) ctx.rotate((rotation * Math.PI) / 180)
+
+              const drawW = el.videoWidth || el.naturalWidth || width
+              const drawH = el.videoHeight || el.naturalHeight || height
+
+              const scaleW = width / drawW
+              const scaleH = height / drawH
+              const containScale = Math.min(scaleW, scaleH)
+              const finalW = drawW * containScale
+              const finalH = drawH * containScale
+
+              ctx.drawImage(el, -finalW / 2, -finalH / 2, finalW, finalH)
+            } else {
+              const drawW = el.videoWidth || el.naturalWidth || width
+              const drawH = el.videoHeight || el.naturalHeight || height
+
+              const scaleW = width / drawW
+              const scaleH = height / drawH
+              const containScale = Math.min(scaleW, scaleH)
+              const finalW = drawW * containScale
+              const finalH = drawH * containScale
+
+              ctx.translate(width / 2, height / 2)
+              ctx.drawImage(el, -finalW / 2, -finalH / 2, finalW, finalH)
+            }
+
+            ctx.restore()
           }
 
-          // Handle audio clips
-          for (const clip of audioClips) {
-            const el = audioRefs.current[clip.id]
-            if (!el) continue
+          // Force microsecond-perfect timestamp
+          const frame = new VideoFrame(canvas, { timestamp: frameIndex * (1_000_000 / fps) })
+          videoEncoder.encode(frame, { keyFrame: frameIndex % (fps * 2) === 0 })
+          frame.close()
 
-            let localTime = time - clip.startTime + clip.sourceOffset
-            if (el.duration > 0) {
-              localTime = localTime % el.duration
-            }
-            const isActive = time >= clip.startTime && time < clip.startTime + clip.duration
+          // Yield to prevent running out of RAM if the encoder queue builds up
+          while (videoEncoder.encodeQueueSize > 20) {
+            await new Promise((r) => setTimeout(r, 10))
+          }
 
-            if (isActive) {
-              if (hasStarted) {
-                const lag = localTime - el.currentTime
-                const massiveDrift = Math.abs(lag) > 0.5
-                if (massiveDrift && !el.seeking) {
-                  el.currentTime = localTime
-                } else if (!massiveDrift && !el.seeking) {
-                  // Do NOT dynamically adjust playbackRate for audio to avoid ticking artifacts!
-                  const baseRate = clip.audioConfig?.playbackRate || 1.0
-                  if (el.playbackRate !== baseRate) el.playbackRate = baseRate
-                }
-                if (el.paused && !el.seeking) el.play().catch(() => {})
-              }
-
-              let currentVolume = clip.audioConfig?.volume ?? 1
-              const clipTime = time - clip.startTime
-              if (clip.fadeIn && clipTime < clip.fadeIn) {
-                currentVolume *= clipTime / clip.fadeIn
-              }
-              if (clip.fadeOut && clipTime > clip.duration - clip.fadeOut) {
-                currentVolume *= (clip.duration - clipTime) / clip.fadeOut
-              }
-
-              if (el.__gain) {
-                el.__gain.gain.value = currentVolume
-              }
-            } else {
-              if (!el.paused) el.pause()
-              if (el.__gain) el.__gain.gain.value = 0
-            }
+          // Progress represents video encoding up to 90%
+          if (frameIndex % 5 === 0) {
+            onProgress(5 + Math.floor((frameIndex / totalFrames) * 85))
           }
         }
 
-        const renderFrame = (): void => {
-          if (aborted || isStopping) return
-          const now = performance.now()
-          const t = hasStarted ? (now - startTime) / 1000 : 0
+        if (aborted) return
 
-          if (hasStarted && t >= maxDuration) {
-            isStopping = true
-            drawFrameAt(maxDuration) // Force draw the absolute final frame perfectly
+        onProgress(90)
+        await videoEncoder.flush()
+        videoEncoder.close()
 
-            // Wait 100ms to ensure the canvas stream captures this final frame before killing the recorder
-            setTimeout(() => {
-              recorder.stop()
-              Object.values(videoRefs.current).forEach((el) => el.pause && el.pause())
-              Object.values(audioRefs.current).forEach((el) => el.pause())
-              audioCtx.close()
-            }, 100)
-            return
-          }
+        // 4. Offline Audio Context Render
+        onProgress(92)
+        const sampleRate = 48000
+        const offlineCtx = new OfflineAudioContext({
+          numberOfChannels: 2,
+          length: Math.ceil(maxDuration * sampleRate),
+          sampleRate
+        })
 
-          drawFrameAt(t)
-          const newProgress = Math.floor((t / maxDuration) * 100)
-          if (newProgress !== lastProgress) {
-            lastProgress = newProgress
-            onProgress(newProgress)
-          }
-          animationFrameIdRef.current = requestAnimationFrame(renderFrame)
+        // Decode audio buffers asynchronously
+        await Promise.all(
+          audioClips.map(async (clip) => {
+            const media = mediaLibrary.find((m) => m.id === clip.mediaId)
+            if (!media || (media.type !== 'audio' && media.type !== 'video')) return
+            try {
+              const src = getMediaUrl(media.path)
+              const lowerSrc = src.toLowerCase()
+              if (
+                lowerSrc.endsWith('.jpg') ||
+                lowerSrc.endsWith('.jpeg') ||
+                lowerSrc.endsWith('.png') ||
+                lowerSrc.endsWith('.gif')
+              ) {
+                return // Don't try to extract audio from static images
+              }
+
+              let arrayBuffer: ArrayBuffer
+
+              if (src.startsWith('file://')) {
+                const filePath = decodeURIComponent(
+                  src.replace('file:///', '').replace('file://', '')
+                )
+                // Decode directly via ffmpeg on the backend to avoid Chromium container issues
+                const pcmWavBuffer = await (window as any).electron.ipcRenderer.invoke(
+                  'system:decode-audio-ffmpeg',
+                  filePath
+                )
+                if (!pcmWavBuffer)
+                  throw new Error('Failed to decode audio with ffmpeg: ' + filePath)
+
+                // clone the buffer so we own the memory
+                const freshBuffer = new ArrayBuffer(pcmWavBuffer.length)
+                new Uint8Array(freshBuffer).set(pcmWavBuffer)
+                arrayBuffer = freshBuffer
+              } else {
+                const response = await fetch(src)
+                arrayBuffer = await response.arrayBuffer()
+              }
+
+              const audioBuffer = await offlineCtx.decodeAudioData(arrayBuffer)
+
+              const source = offlineCtx.createBufferSource()
+              source.buffer = audioBuffer
+
+              const gainNode = offlineCtx.createGain()
+              const config = clip.audioConfig || { volume: 1, playbackRate: 1.0 }
+
+              // Playback Rate
+              if (config.playbackRate && config.playbackRate !== 1.0) {
+                source.playbackRate.value = config.playbackRate
+              }
+
+              // Volume & Transitions
+              gainNode.gain.setValueAtTime(config.volume, Math.max(0, clip.startTime))
+              if (clip.fadeIn) {
+                gainNode.gain.setValueAtTime(0, Math.max(0, clip.startTime))
+                gainNode.gain.linearRampToValueAtTime(config.volume, clip.startTime + clip.fadeIn)
+              }
+              if (clip.fadeOut) {
+                gainNode.gain.setValueAtTime(
+                  config.volume,
+                  clip.startTime + clip.duration - clip.fadeOut
+                )
+                gainNode.gain.linearRampToValueAtTime(0, clip.startTime + clip.duration)
+              }
+
+              source.connect(gainNode)
+              gainNode.connect(offlineCtx.destination)
+
+              // Accurate start mapping
+              source.start(Math.max(0, clip.startTime), clip.sourceOffset || 0, clip.duration)
+            } catch (e) {
+              console.error(`Audio decode error for clip ${clip.id}`, e)
+            }
+          })
+        )
+
+        try {
+          const debugData = JSON.stringify(
+            {
+              tracks: tracks,
+              clips: clips,
+              audioClips: audioClips.map((c) => ({
+                id: c.id,
+                trackId: c.trackId,
+                start: c.startTime,
+                duration: c.duration,
+                mediaId: c.mediaId
+              }))
+            },
+            null,
+            2
+          )
+          await (window as any).electron.ipcRenderer.invoke('debug:log', debugData)
+        } catch (e) {
+          console.error('Failed to log debug data', e)
         }
 
-        renderFrame()
+        onProgress(95)
+        const renderedBuffer = await offlineCtx.startRendering()
+
+        onProgress(98)
+        const wavData = audioBufferToWav(renderedBuffer)
+
+        // Send raw audio to IPC safely
+        await (window as any).electron.ipcRenderer.invoke('save-audio-buffer', wavData)
+
+        onComplete()
       } catch (err: any) {
         onError(err)
       }
@@ -475,22 +527,13 @@ export function ExportEngine({
 
     initExport()
 
-    const capturedVideoRefs = videoRefs.current
-    const capturedAudioRefs = audioRefs.current
+    const cleanupRefs = videoRefs.current
+
     return () => {
       aborted = true
       isRunning.current = false
-      cancelAnimationFrame(animationFrameIdRef.current)
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        mediaRecorderRef.current.stop()
-      }
-      Object.values(capturedVideoRefs).forEach((el) => {
-        el.pause && el.pause()
-        el.src = ''
-        el.removeAttribute('src')
-      })
-      Object.values(capturedAudioRefs).forEach((el) => {
-        el.pause && el.pause()
+      Object.values(cleanupRefs).forEach((el) => {
+        if ('pause' in el) el.pause()
         el.src = ''
         el.removeAttribute('src')
       })

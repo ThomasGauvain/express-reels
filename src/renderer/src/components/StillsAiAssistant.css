@@ -1,0 +1,84 @@
+.stills-ai-assistant {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.chat-message {
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.chat-message.user {
+  background: #333;
+  color: #fff;
+}
+
+.chat-message.assistant {
+  background: #1a1a1a;
+  color: #ccc;
+}
+
+.chat-loading {
+  color: #888;
+  font-style: italic;
+}
+
+.api-key-warning {
+  color: orange;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.ai-button-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.auto-cull-btn {
+  flex: 1;
+  padding: 6px;
+  background: #222;
+  border: 1px solid #444;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.chat-input {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-text-input {
+  flex: 1;
+  padding: 8px;
+  background: #111;
+  border: 1px solid #333;
+  color: white;
+  border-radius: 4px;
+}
+
+.chat-send-btn {
+  padding: 8px 16px;
+  background: var(--color-accent);
+  border: none;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chat-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

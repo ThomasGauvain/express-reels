@@ -110,7 +110,7 @@ export function calculateKenBurnsTransform(
 
       if (currentTime >= k1.time && currentTime < k2.time) {
         const duration = k2.time - k1.time
-        const progress = (currentTime - k1.time) / duration
+        const progress = duration === 0 ? 1 : (currentTime - k1.time) / duration
 
         result = {
           x: interpolateValue(k1.x, k2.x, progress, easing),
@@ -125,9 +125,9 @@ export function calculateKenBurnsTransform(
 
   if (effect.constrainToFrame !== false) {
     result.zoom = Math.max(1, result.zoom)
-    const maxPan = ((result.zoom - 1) / (2 * result.zoom)) * 100
-    result.x = Math.max(-maxPan, Math.min(maxPan, result.x))
-    result.y = Math.max(-maxPan, Math.min(maxPan, result.y))
+    // We intentionally do not dynamically clamp result.x and result.y to maxPan here anymore.
+    // Dynamically clamping the pan mathematically breaks the linear interpolation curve when
+    // zooming and panning simultaneously, causing severe non-linear movement and "choppiness".
   }
 
   return result

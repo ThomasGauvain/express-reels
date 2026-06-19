@@ -1,13 +1,30 @@
 import React, { useState } from 'react'
 import './EffectsPalette.css'
+import { usePlaybackStore } from '../store/playbackStore'
 import { useProjectStore } from '../store/projectStore'
 import { useShallow } from 'zustand/react/shallow'
 import { calculateKenBurnsTransform } from '../lib/kenBurns'
-import { Plus, Trash2, Wand2, ArrowRight, BrainCircuit, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Wand2, ArrowRight, BrainCircuit, Loader2, Type } from 'lucide-react'
 import { VFXBrowserModal } from './VFXBrowserModal'
 import { analyzeSubjectForKenBurns } from '../lib/gemini'
 import { fileToBase64 } from '../lib/contextBridge'
+
+const customFonts = [
+  'Oswald',
+  'Bebas Neue',
+  'Permanent Marker',
+  'Cinzel',
+  'Playfair Display',
+  'Montserrat',
+  'Open Sans',
+  'Roboto',
+  'Lato',
+  'Raleway',
+  'Ubuntu'
+]
+
 export function EffectsPalette(): React.ReactElement | null {
+  const [hoveredFontFamily, setHoveredFontFamily] = useState<string | null>(null)
   const {
     selectedClipId,
     activeKeyframeId,
@@ -19,7 +36,10 @@ export function EffectsPalette(): React.ReactElement | null {
     updateKenBurnsKeyframe,
     updateKenBurnsEffect,
     removeVisualEffect,
-    aiKeys
+    aiKeys,
+    updateClip,
+    addClip,
+    setSelectedClipId
   } = useProjectStore(
     useShallow((s) => ({
       selectedClipId: s.selectedClipId,
@@ -32,7 +52,10 @@ export function EffectsPalette(): React.ReactElement | null {
       updateKenBurnsKeyframe: s.updateKenBurnsKeyframe,
       updateKenBurnsEffect: s.updateKenBurnsEffect,
       removeVisualEffect: s.removeVisualEffect,
-      aiKeys: s.aiKeys
+      aiKeys: s.aiKeys,
+      updateClip: s.updateClip,
+      addClip: s.addClip,
+      setSelectedClipId: s.setSelectedClipId
     }))
   )
   const [showVFXBrowser, setShowVFXBrowser] = useState(false)
@@ -45,6 +68,36 @@ export function EffectsPalette(): React.ReactElement | null {
     ? useProjectStore.getState().tracks.find((t) => t.id === selectedClip.trackId)
     : null
   const effect = selectedClip?.kenBurnsEffect
+
+  const handleAddText = (): void => {
+    const textTrack = useProjectStore.getState().tracks.find((t) => t.type === 'text')
+    if (!textTrack) {
+      alert('Please add a text track to the timeline first!')
+      return
+    }
+    const playhead = usePlaybackStore.getState().playhead
+    const newId = crypto.randomUUID()
+    const defaultTextProps = {
+      content: 'Your Text Here',
+      fontFamily: 'Inter',
+      fontWeight: 'bold',
+      fontSize: 72,
+      color: '#ffffff',
+      dropShadow: { enabled: true, offsetX: 2, offsetY: 2, blur: 4, color: 'rgba(0,0,0,0.5)' }
+    }
+    addClip({
+      id: newId,
+      trackId: textTrack.id,
+      mediaId: '',
+      startTime: playhead,
+      duration: 5,
+      sourceOffset: 0,
+      name: 'New Text',
+      textProperties: defaultTextProps
+    })
+    setSelectedClipId(newId)
+  }
+
   if (!selectedClip) {
     return (
       <div className="panel panel-b-effects effectspalette-style-1">
@@ -53,9 +106,14 @@ export function EffectsPalette(): React.ReactElement | null {
             <div className="effectspalette-style-3">EFFECTS PALETTE</div>
             <div className="effectspalette-style-4">Global Effects</div>
           </div>
-          <button onClick={() => setShowVFXBrowser(true)} className="effectspalette-style-5">
-            <Plus size={12} /> Add Effect
-          </button>
+          <div className="effectspalette-flex-gap">
+            <button onClick={handleAddText} className="effectspalette-style-5">
+              <Type size={12} /> Add Text
+            </button>
+            <button onClick={() => setShowVFXBrowser(true)} className="effectspalette-style-5">
+              <Plus size={12} /> Add Effect
+            </button>
+          </div>
         </div>
         <div className="effectspalette-style-6">
           <div className="effectspalette-style-7">
@@ -77,7 +135,7 @@ export function EffectsPalette(): React.ReactElement | null {
   const displayMedia = isEffectClip ? null : mediaLibrary.find((m) => m.id === selectedClip.mediaId)
   const keyframes = effect?.keyframes || []
   const handleAddKeyframe = (): void => {
-    const playhead = useProjectStore.getState().playhead
+    const playhead = usePlaybackStore.getState().playhead
     const time = Math.max(0, Math.min(selectedClip.duration, playhead - selectedClip.startTime))
     let newX = 0,
       newY = 0,
@@ -107,72 +165,36 @@ export function EffectsPalette(): React.ReactElement | null {
     try {
       if (!selectedMedia || !selectedMedia.path) throw new Error('No media path')
       const b64 = await fileToBase64(selectedMedia.path)
-      const subjects = await analyzeSubjectForKenBurns(b64)
-      if (subjects && subjects.length >= 2) {
-        const sub1 = subjects[0]
-        const sub2 = subjects[1]
-
-        // Convert from 0-100% to our -50 to 50 panning system
-        const t1X = sub1.x - 50
-        const t1Y = sub1.y - 50
-        const t2X = sub2.x - 50
-        const t2Y = sub2.y - 50
-
+      const result = await analyzeSubjectForKenBurns(b64, selectedClip.duration)
+      if (result && result.keyframes && result.keyframes.length > 0) {
+        useProjectStore.getState().addCopilotMessage({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `**Auto Ken Burns Analysis:**\n\n${result.description}`
+        })
+        const aiKeyframes = result.keyframes
         // Remove existing keyframes
         for (const kf of keyframes) {
           removeKenBurnsKeyframe(selectedClip.id, kf.id)
         }
-        const dur = selectedClip.duration
 
-        // Keyframe 1: Start slightly zoomed in on Subject 1
-        addKenBurnsKeyframe(selectedClip.id, {
-          id: crypto.randomUUID(),
-          time: 0,
-          x: t1X * 0.8,
-          y: t1Y * 0.8,
-          zoom: 1.5
+        let lastEndId = ''
+        aiKeyframes.forEach((kfData) => {
+          const endId = crypto.randomUUID()
+          addKenBurnsKeyframe(selectedClip.id, {
+            id: endId,
+            time: Math.max(0, Math.min(selectedClip.duration, kfData.time)),
+            x: Math.max(-50, Math.min(50, kfData.x)),
+            y: Math.max(-50, Math.min(50, kfData.y)),
+            zoom: Math.max(1, Math.min(4, kfData.zoom))
+          })
+          lastEndId = endId
         })
-
-        // Keyframe 2: Zoom in tighter on Subject 1
-        addKenBurnsKeyframe(selectedClip.id, {
-          id: crypto.randomUUID(),
-          time: dur * 0.25,
-          x: t1X,
-          y: t1Y,
-          zoom: 2.5
-        })
-
-        // Keyframe 3: Pan to Subject 2 and zoom out slightly
-        addKenBurnsKeyframe(selectedClip.id, {
-          id: crypto.randomUUID(),
-          time: dur * 0.5,
-          x: t2X,
-          y: t2Y,
-          zoom: 1.8
-        })
-
-        // Keyframe 4: Zoom out to a wider central view
-        addKenBurnsKeyframe(selectedClip.id, {
-          id: crypto.randomUUID(),
-          time: dur * 0.75,
-          x: (t1X + t2X) / 4,
-          // Midpoint-ish, but closer to center
-          y: (t1Y + t2Y) / 4,
-          zoom: 1.2
-        })
-
-        // Keyframe 5: Fully zoomed out at the end
-        const endId = crypto.randomUUID()
-        addKenBurnsKeyframe(selectedClip.id, {
-          id: endId,
-          time: dur,
-          x: 0,
-          y: 0,
-          zoom: 1.0
-        })
-        setActiveKeyframeId(endId)
+        if (lastEndId) {
+          setActiveKeyframeId(lastEndId)
+        }
       } else {
-        alert('Gemini could not identify clear subjects.')
+        alert('Gemini could not generate cinematic keyframes.')
       }
     } catch (err) {
       console.error(err)
@@ -182,7 +204,19 @@ export function EffectsPalette(): React.ReactElement | null {
     }
   }
   return (
-    <div className="panel panel-b-effects effectspalette-style-10">
+    <div
+      className="panel panel-b-effects effectspalette-style-10"
+      onMouseDownCapture={(e) => {
+        const target = e.target as HTMLElement
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT'
+        ) {
+          useProjectStore.getState().saveHistory()
+        }
+      }}
+    >
       <div className="effectspalette-style-11">
         <div>
           <div className="effectspalette-style-12">EFFECTS PALETTE</div>
@@ -190,7 +224,10 @@ export function EffectsPalette(): React.ReactElement | null {
             {selectedClip.name || displayMedia?.name || 'Selected Clip'}
           </div>
         </div>
-        <div className="effectspalette-style-14">
+        <div className="effectspalette-style-14 effectspalette-flex-gap">
+          <button onClick={handleAddText} className="effectspalette-style-16">
+            <Type size={12} /> Add Text
+          </button>
           {displayMedia && (
             <button onClick={() => setShowVFXBrowser(true)} className="effectspalette-style-16">
               <Wand2 size={12} /> Add Effect
@@ -200,7 +237,123 @@ export function EffectsPalette(): React.ReactElement | null {
       </div>
 
       <div className="effectspalette-style-17">
-        {isEffectClip ? (
+        {selectedClip.textProperties ? (
+          <div className="effectspalette-style-17">
+            <div className="effectspalette-style-11">
+              <label className="effectspalette-style-12">Text Content</label>
+              <style>{`
+                .dynamic-font-textarea {
+                  font-family: "${hoveredFontFamily || selectedClip.textProperties.fontFamily}", sans-serif;
+                  white-space: pre-wrap;
+                }
+              `}</style>
+              <textarea
+                title="Text Content"
+                value={selectedClip.textProperties.content}
+                onChange={(e) =>
+                  updateClip(selectedClip.id, {
+                    textProperties: { ...selectedClip.textProperties!, content: e.target.value }
+                  })
+                }
+                className="effectspalette-style-13 dynamic-font-textarea"
+                rows={3}
+              />
+            </div>
+            <div className="effectspalette-style-10 effectspalette-margin-top">
+              <div className="effectspalette-style-11">
+                <label className="effectspalette-style-12">Font Family</label>
+                <select
+                  title="Font Family"
+                  value={selectedClip.textProperties.fontFamily}
+                  onChange={(e) =>
+                    updateClip(selectedClip.id, {
+                      textProperties: {
+                        ...selectedClip.textProperties!,
+                        fontFamily: e.target.value
+                      }
+                    })
+                  }
+                  className="effectspalette-style-13"
+                >
+                  <option value="Inter">Inter</option>
+                  <option value="Arial">Arial</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                  <option value="Courier New">Courier New</option>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Verdana">Verdana</option>
+                  <option value="Trebuchet MS">Trebuchet MS</option>
+                  {customFonts.map((f) => (
+                    <option
+                      key={f}
+                      value={f}
+                      onMouseEnter={() => setHoveredFontFamily(f)}
+                      onMouseLeave={() => setHoveredFontFamily(null)}
+                    >
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="effectspalette-style-55">
+                <label className="effectspalette-style-12">Alignment</label>
+                <select
+                  className="effectspalette-style-56"
+                  title="Text Alignment"
+                  value={selectedClip.textProperties.textAlign || 'center'}
+                  onChange={(e) =>
+                    updateClip(selectedClip.id, {
+                      textProperties: {
+                        ...selectedClip.textProperties!,
+                        textAlign: e.target.value as 'left' | 'center' | 'right'
+                      }
+                    })
+                  }
+                >
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </div>
+            </div>
+            <div className="effectspalette-style-57 effectspalette-margin-top">
+              <div className="effectspalette-style-58">
+                <span>Font Size</span>
+                <span>{selectedClip.textProperties.fontSize}px</span>
+              </div>
+              <input
+                type="range"
+                title="Font Size"
+                min="10"
+                max="300"
+                value={selectedClip.textProperties.fontSize}
+                onChange={(e) =>
+                  updateClip(selectedClip.id, {
+                    textProperties: {
+                      ...selectedClip.textProperties!,
+                      fontSize: parseInt(e.target.value)
+                    }
+                  })
+                }
+                className="effectspalette-style-59"
+              />
+            </div>
+            <div className="effectspalette-style-11 effectspalette-margin-top">
+              <label className="effectspalette-style-12">Text Color</label>
+              <input
+                type="color"
+                title="Text Color"
+                value={selectedClip.textProperties.color}
+                onChange={(e) =>
+                  updateClip(selectedClip.id, {
+                    textProperties: { ...selectedClip.textProperties!, color: e.target.value }
+                  })
+                }
+                className="effectspalette-style-13 effectspalette-color-input"
+              />
+            </div>
+          </div>
+        ) : isEffectClip ? (
           <div className="effectspalette-style-18">
             Adjust this effect&apos;s length by dragging its edges in the timeline.
             {/* Future: expose effect-specific parameters here (e.g. blur radius) */}
@@ -242,9 +395,13 @@ export function EffectsPalette(): React.ReactElement | null {
             )}
 
             {/* Ken Burns Section */}
+          </>
+        )}
 
+        {(selectedClip.textProperties || (!isEffectClip && selectedTrack?.type !== 'audio')) && (
+          <>
             {/* Constrain Toggle for Ken Burns */}
-            <div className="effectspalette-style-25">
+            <div className="effectspalette-style-25 effectspalette-margin-top">
               <div className="effectspalette-style-26">Ken Burns (Auto Pan/Zoom)</div>
               <div
                 className="mode-toggle effectspalette-style-27"
@@ -265,7 +422,7 @@ export function EffectsPalette(): React.ReactElement | null {
               <div className="effectspalette-style-30">
                 <button
                   onClick={handleAutoMode}
-                  disabled={isAutoAnalyzing || !aiKeys?.gemini}
+                  disabled={isAutoAnalyzing || !aiKeys?.gemini || !!selectedClip.textProperties}
                   title={
                     aiKeys?.gemini ? 'Auto-track subject with AI' : 'Add Gemini API Key in Settings'
                   }

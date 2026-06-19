@@ -27,8 +27,8 @@
   flex-direction: column;
 }
 
-.exportmodal-style-2.split-screen {
-  width: 1000px;
+.exportmodal-style-2.three-panel {
+  width: 1400px;
 }
 
 .modal-header {
@@ -275,11 +275,20 @@
 
 .export-modal-right-pane {
   flex: 1;
-  min-width: 500px;
+  min-width: 400px;
   background-color: var(--color-bg-dark);
   display: flex;
   flex-direction: column;
+}
+
+.export-modal-far-right-pane {
+  flex: 1;
+  min-width: 400px;
+  background-color: var(--color-bg-darkest);
+  display: flex;
+  flex-direction: column;
   border-bottom-right-radius: 12px;
+  border-left: 1px solid var(--color-border);
 }
 
 .ai-copilot-header {
@@ -496,4 +505,15 @@
 
 .export-start-btn {
   margin-top: 24px;
+}
+
+.meta-ai-webview {
+  flex: 1;
+  width: 100%;
+  border: none;
+  border-bottom-right-radius: 12px;
+}
+
+.exportmodal-style-16.watermark-note {
+  margin-top: 8px;
 }

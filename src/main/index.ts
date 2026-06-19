@@ -3,9 +3,10 @@ import { join } from 'path'
 import * as fs from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { exec } from 'child_process'
+import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import ffmpegPath from 'ffmpeg-static'
+import exifr from 'exifr'
 
 const execAsync = promisify(exec)
 
@@ -55,7 +56,8 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       webSecurity: false,
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      webviewTag: true
     }
   })
 
@@ -204,6 +206,99 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle('dialog:pickDirectory', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return null
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (canceled || filePaths.length === 0) {
+      return null
+    }
+    return filePaths[0]
+  })
+
+  ipcMain.handle(
+    'system:download-url',
+    async (_, url: string, destDir: string, filename: string) => {
+      try {
+        if (!fs.existsSync(destDir)) {
+          fs.mkdirSync(destDir, { recursive: true })
+        }
+        const fullPath = join(destDir, filename)
+
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`)
+        const arrayBuffer = await response.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
+
+        fs.writeFileSync(fullPath, buffer)
+        return fullPath
+      } catch (err: unknown) {
+        console.error('Download error:', err)
+        throw err
+      }
+    }
+  )
+
+  ipcMain.handle('dialog:openDirectory', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return []
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory']
+    })
+    if (canceled || filePaths.length === 0) {
+      return []
+    }
+
+    const dirPath = filePaths[0]
+    const mediaFiles: string[] = []
+    const allowedExts = new Set([
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.webp',
+      '.mp4',
+      '.mov',
+      '.mkv',
+      '.webm',
+      '.avi',
+      '.mp3',
+      '.wav',
+      '.cr2',
+      '.nef',
+      '.arw'
+    ])
+
+    const scanDir = (dir: string): void => {
+      try {
+        const files = fs.readdirSync(dir)
+        for (const file of files) {
+          const fullPath = join(dir, file)
+          try {
+            const stat = fs.statSync(fullPath)
+            if (stat.isDirectory()) {
+              scanDir(fullPath)
+            } else {
+              const ext = fullPath.substring(fullPath.lastIndexOf('.')).toLowerCase()
+              if (allowedExts.has(ext)) {
+                mediaFiles.push(fullPath)
+              }
+            }
+          } catch (err) {
+            console.error('Error stating file', fullPath, err)
+          }
+        }
+      } catch (err) {
+        console.error('Error reading dir', dir, err)
+      }
+    }
+
+    scanDir(dirPath)
+    return mediaFiles
+  })
+
   ipcMain.handle('dialog:saveProject', async (event, data: string) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return null
@@ -247,7 +342,13 @@ app.whenReady().then(() => {
 
   ipcMain.handle('settings:write', async (_, key: string, data: string) => {
     const filePath = join(app.getPath('userData'), `${key}.json`)
-    fs.writeFileSync(filePath, data, 'utf-8')
+    const tempPath = join(app.getPath('userData'), `${key}.tmp`)
+    try {
+      fs.writeFileSync(tempPath, data, 'utf-8')
+      fs.renameSync(tempPath, filePath)
+    } catch (e) {
+      console.error('Failed to write settings atomically:', e)
+    }
     return true
   })
 
@@ -269,6 +370,90 @@ app.whenReady().then(() => {
       return null
     } catch (err) {
       console.error('Failed to read file for base64:', err)
+      return null
+    }
+  })
+
+  ipcMain.handle('system:read-file-buffer', async (_, filePath: string) => {
+    try {
+      if (fs.existsSync(filePath)) {
+        const data = fs.readFileSync(filePath)
+        return new Uint8Array(data)
+      }
+      return null
+    } catch (e) {
+      console.error('Failed to read file buffer', e)
+      return null
+    }
+  })
+
+  ipcMain.handle('debug:log', async (_, data: string) => {
+    fs.writeFileSync(join(app.getPath('userData'), 'debug-export.json'), data)
+    return true
+  })
+
+  ipcMain.handle('system:decode-audio-ffmpeg', async (_, filePath: string) => {
+    return new Promise((resolve) => {
+      try {
+        let binaryPath = ffmpegPath as string
+        if (binaryPath.replace('app.asar', 'app.asar.unpacked')) {
+          binaryPath = binaryPath.replace('app.asar', 'app.asar.unpacked')
+        }
+
+        const ffmpeg = spawn(binaryPath, [
+          '-i',
+          filePath,
+          '-vn', // no video
+          '-acodec',
+          'pcm_s16le',
+          '-ar',
+          '48000',
+          '-ac',
+          '2',
+          '-f',
+          'wav',
+          'pipe:1'
+        ])
+
+        const chunks: Buffer[] = []
+        ffmpeg.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
+
+        ffmpeg.on('close', (code: number) => {
+          if (code === 0) {
+            resolve(new Uint8Array(Buffer.concat(chunks)))
+          } else {
+            console.error('ffmpeg decode failed with code', code)
+            resolve(null)
+          }
+        })
+      } catch (e) {
+        console.error('system:decode-audio-ffmpeg error', e)
+        resolve(null)
+      }
+    })
+  })
+
+  ipcMain.handle('media:get-metadata', async (_, filePath: string) => {
+    try {
+      if (fs.existsSync(filePath)) {
+        // Parse metadata using exifr (works for jpg, png, tiff, heic, mov, mp4)
+        const metadata = await exifr.parse(filePath)
+        if (metadata) {
+          // Look for common artist/author fields
+          const artist =
+            metadata.Artist ||
+            metadata.Author ||
+            metadata.Creator ||
+            metadata.Photographer ||
+            metadata.Copyright
+          if (artist) {
+            return { artist: artist.toString().trim() }
+          }
+        }
+      }
+      return null
+    } catch (err) {
+      console.error(`Failed to extract metadata for ${filePath}:`, err)
       return null
     }
   })
@@ -302,12 +487,19 @@ app.whenReady().then(() => {
     return filePath
   })
 
-  let currentTempWebmPath: string | null = null
+  let currentTempH264Path: string | null = null
+  let currentTempAudioPath: string | null = null
   let currentTempWriteStream: fs.WriteStream | null = null
 
   ipcMain.handle('save-video-start', () => {
-    currentTempWebmPath = join(app.getPath('temp'), `temp_video_${Date.now()}.webm`)
-    currentTempWriteStream = fs.createWriteStream(currentTempWebmPath)
+    currentTempH264Path = join(app.getPath('temp'), `temp_video_${Date.now()}.h264`)
+    currentTempWriteStream = fs.createWriteStream(currentTempH264Path)
+    return true
+  })
+
+  ipcMain.handle('save-audio-buffer', (_event, buffer: Uint8Array) => {
+    currentTempAudioPath = join(app.getPath('temp'), `temp_audio_${Date.now()}.wav`)
+    fs.writeFileSync(currentTempAudioPath, Buffer.from(buffer))
     return true
   })
 
@@ -320,7 +512,14 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'save-video-finish',
-    async (event, format: string, codec?: string, quality?: string, hwAccel?: boolean) => {
+    async (
+      event,
+      format: string,
+      codec?: string,
+      quality?: string,
+      _hwAccel?: boolean,
+      fps: number = 30
+    ) => {
       if (currentTempWriteStream) {
         // Wait for the stream to fully flush and close before proceeding
         await new Promise<void>((resolve) => {
@@ -329,9 +528,11 @@ app.whenReady().then(() => {
         currentTempWriteStream = null
       }
 
-      if (!currentTempWebmPath) return false
-      const tempWebmPath = currentTempWebmPath
-      currentTempWebmPath = null
+      if (!currentTempH264Path || !currentTempAudioPath) return false
+      const tempH264Path = currentTempH264Path
+      const tempAudioPath = currentTempAudioPath
+      currentTempH264Path = null
+      currentTempAudioPath = null
 
       const win = BrowserWindow.fromWebContents(event.sender)
       if (!win) return false
@@ -344,78 +545,44 @@ app.whenReady().then(() => {
       })
 
       if (canceled || !filePath) {
-        if (fs.existsSync(tempWebmPath)) {
-          fs.unlinkSync(tempWebmPath)
-        }
+        if (fs.existsSync(tempH264Path)) fs.unlinkSync(tempH264Path)
+        if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath)
         return false
       }
 
-      if (format === 'webm' && (!codec || codec === 'vp9')) {
-        // Fast path for raw WebM
-        fs.copyFileSync(tempWebmPath, filePath)
-        fs.unlinkSync(tempWebmPath)
-        return filePath
-      }
-
       try {
-        let videoCodecStr = '-c:v libx264'
-        let qualityStr = '-crf 23'
-        let hwCodecsToTry: string[] = []
-
-        if (codec === 'h264' || !codec) {
-          videoCodecStr = '-c:v libx264'
-          hwCodecsToTry =
-            process.platform === 'darwin'
-              ? ['h264_videotoolbox']
-              : ['h264_nvenc', 'h264_amf', 'h264_qsv']
-          const crf = quality === 'high' ? 18 : quality === 'low' ? 28 : 23
-          qualityStr = `-crf ${crf}`
-        } else if (codec === 'h265') {
-          videoCodecStr = '-c:v libx265'
-          hwCodecsToTry =
-            process.platform === 'darwin'
-              ? ['hevc_videotoolbox']
-              : ['hevc_nvenc', 'hevc_amf', 'hevc_qsv']
-          const crf = quality === 'high' ? 24 : quality === 'low' ? 32 : 28
-          qualityStr = `-crf ${crf}`
-          if (format === 'mov') qualityStr += ' -tag:v hvc1'
-        } else if (codec === 'prores') {
-          videoCodecStr = '-c:v prores_ks'
-          const profile = quality === 'high' ? 3 : quality === 'low' ? 0 : 2
-          qualityStr = `-profile:v ${profile} -vendor apl0`
-        } else if (codec === 'mpeg4') {
-          videoCodecStr = '-c:v mpeg4 -vtag xvid'
-          const qscale = quality === 'high' ? 2 : quality === 'low' ? 8 : 4
-          qualityStr = `-qscale:v ${qscale}`
-        } else if (codec === 'vp9') {
-          videoCodecStr = '-c:v libvpx-vp9'
-          const crf = quality === 'high' ? 30 : quality === 'low' ? 40 : 35
-          qualityStr = `-crf ${crf} -b:v 0`
-        }
-
-        // Fix MediaRecorder's variable timestamps safely without breaking audio
-        const timestampFix = `-async 1 -vsync cfr`
-
         let success = false
-        if (hwAccel && hwCodecsToTry && hwCodecsToTry.length > 0) {
-          for (const hwCodec of hwCodecsToTry) {
-            try {
-              // Map CRF quality to a rough bitrate for generic hardware encoding compatibility
-              const bitRate = quality === 'high' ? '15M' : quality === 'low' ? '4M' : '8M'
-              const hwCmd = `"${ffmpegPath}" -y -i "${tempWebmPath}" ${timestampFix} -c:v ${hwCodec} -b:v ${bitRate} -c:a aac -b:a 192k "${filePath}"`
-              await execAsync(hwCmd)
-              success = true
-              console.log(`Successfully used hardware encoder: ${hwCodec}`)
-              break // Exit loop on first successful hardware encode
-            } catch {
-              console.log(`Hardware acceleration with ${hwCodec} failed. Trying next...`)
-            }
-          }
+
+        // Since VideoEncoder already produced flawless H.264 Annex B, if the user requested H.264 MP4/MOV,
+        // we can achieve instantaneous saving by copying the stream without re-encoding!
+        if ((format === 'mp4' || format === 'mov') && (codec === 'h264' || !codec)) {
+          const muxCmd = `"${ffmpegPath}" -y -framerate ${fps} -i "${tempH264Path}" -i "${tempAudioPath}" -c:v copy -c:a aac -b:a 192k "${filePath}"`
+          await execAsync(muxCmd)
+          success = true
         }
 
+        // If they requested a different codec/format (like WebM or ProRes), we have to transcode the flawless H.264 temp file
         if (!success) {
-          const swCmd = `"${ffmpegPath}" -y -i "${tempWebmPath}" ${timestampFix} ${videoCodecStr} -preset fast ${qualityStr} -c:a aac -b:a 192k "${filePath}"`
-          await execAsync(swCmd)
+          let videoCodecStr = '-c:v libx264'
+          let qualityStr = '-crf 23'
+
+          if (codec === 'h265') {
+            videoCodecStr = '-c:v libx265'
+            const crf = quality === 'high' ? 24 : quality === 'low' ? 32 : 28
+            qualityStr = `-crf ${crf}`
+            if (format === 'mov') qualityStr += ' -tag:v hvc1'
+          } else if (codec === 'prores') {
+            videoCodecStr = '-c:v prores_ks'
+            const profile = quality === 'high' ? 3 : quality === 'low' ? 0 : 2
+            qualityStr = `-profile:v ${profile} -vendor apl0`
+          } else if (codec === 'vp9' || format === 'webm') {
+            videoCodecStr = '-c:v libvpx-vp9'
+            const crf = quality === 'high' ? 30 : quality === 'low' ? 40 : 35
+            qualityStr = `-crf ${crf} -b:v 0`
+          }
+
+          const transcodeCmd = `"${ffmpegPath}" -y -framerate ${fps} -i "${tempH264Path}" -i "${tempAudioPath}" ${videoCodecStr} -preset fast ${qualityStr} -c:a aac -b:a 192k "${filePath}"`
+          await execAsync(transcodeCmd)
         }
 
         return filePath
@@ -423,9 +590,8 @@ app.whenReady().then(() => {
         console.error('FFmpeg video export error:', err)
         throw err
       } finally {
-        if (fs.existsSync(tempWebmPath)) {
-          fs.unlinkSync(tempWebmPath)
-        }
+        if (fs.existsSync(tempH264Path)) fs.unlinkSync(tempH264Path)
+        if (fs.existsSync(tempAudioPath)) fs.unlinkSync(tempAudioPath)
       }
     }
   )
@@ -526,6 +692,40 @@ app.whenReady().then(() => {
 
   ipcMain.on('sound-studio:window-close', () => {
     if (soundStudioWindow) soundStudioWindow.close()
+  })
+
+  ipcMain.handle('export-photo-batch', async (_, photos: { name: string; dataUrl: string }[]) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Select Export Folder',
+      properties: ['openDirectory', 'createDirectory']
+    })
+
+    if (canceled || filePaths.length === 0) {
+      return null
+    }
+
+    const exportDir = filePaths[0]
+    const savedPaths: string[] = []
+
+    for (const photo of photos) {
+      try {
+        // Strip data prefix (e.g., "data:image/jpeg;base64,")
+        const base64Data = photo.dataUrl.replace(/^data:image\/\w+;base64,/, '')
+        const buffer = Buffer.from(base64Data, 'base64')
+        const safeName = photo.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()
+        // Extract extension from dataUrl
+        const extMatch = photo.dataUrl.match(/^data:image\/(\w+);base64,/)
+        const ext = extMatch ? extMatch[1] : 'jpeg'
+
+        const filePath = join(exportDir, `${safeName}.${ext}`)
+        fs.writeFileSync(filePath, buffer)
+        savedPaths.push(filePath)
+      } catch (err) {
+        console.error('Failed to save photo:', photo.name, err)
+      }
+    }
+
+    return savedPaths
   })
 
   createWindow()

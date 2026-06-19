@@ -2,30 +2,34 @@ import { useState, type ReactElement } from 'react'
 import './AuthModal.css'
 import { useProjectStore } from '../store/projectStore'
 import { X, Mail, Lock, User } from 'lucide-react'
+
 export function AuthModal({ onClose }: { onClose: () => void }): ReactElement {
+  const { login } = useProjectStore()
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
-  const { login } = useProjectStore()
+
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault()
-    // Mock login logic
-    if (email && password) {
-      // If login mode, use 'User' or existing name if none provided
-      login(email, isLogin ? 'User' : name || 'New User', password)
-      onClose()
-    }
+    login(email, isLogin ? 'Demo User' : name, password)
+    onClose()
   }
+
   return (
     <div className="auth-style-1">
       <div className="auth-style-2">
+        <button onClick={onClose} className="auth-style-3" aria-label="Close" title="Close">
+          <X size={16} />
+        </button>
+
         {/* Header */}
-        <div className="auth-style-3">
-          <h2 className="auth-style-4">{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
-          <button onClick={onClose} className="auth-style-5" title="Close" aria-label="Close">
-            <X size={20} />
-          </button>
+        <div className="auth-style-4">
+          <div className="auth-style-5">
+            <User size={20} className="text-white" />
+          </div>
+          <h2>{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
+          <p>{isLogin ? 'Sign in to access your projects' : 'Sign up to start creating'}</p>
         </div>
 
         {/* Form */}

@@ -1,14 +1,25 @@
 import React, { useState, useEffect } from 'react'
 import './SettingsModal.css'
 import { useProjectStore } from '../store/projectStore'
-import { X, User, Key, Save, Zap } from 'lucide-react'
+import { X, User, Key, Save, Zap, Type, Trash2 } from 'lucide-react'
 export function SettingsModal({ onClose }: { onClose: () => void }): React.ReactElement {
-  const { currentUser, aiKeys, setAiKeys, login, creatorProfile, updateCreatorProfile } =
-    useProjectStore()
-  const [activeTab, setActiveTab] = useState<'profile' | 'keys' | 'performance'>('profile')
+  const {
+    currentUser,
+    aiKeys,
+    setAiKeys,
+    login,
+    creatorProfile,
+    updateCreatorProfile,
+    downloadDirectory,
+    setDownloadDirectory
+  } = useProjectStore()
+  const [activeTab, setActiveTab] = useState<
+    'profile' | 'keys' | 'performance' | 'general' | 'fonts'
+  >('profile')
 
   // Performance State
   const [forceDedicatedGpu, setForceDedicatedGpu] = useState(false)
+  const [enableBackgroundProxies, setEnableBackgroundProxies] = useState(false)
   const [originalGpuState, setOriginalGpuState] = useState(false)
   const [gpuInfo, setGpuInfo] = useState<{
     gpuDevice?: { vendorString: string; deviceString: string; active: boolean }[]
@@ -21,6 +32,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
           try {
             const parsed = JSON.parse(res)
             setForceDedicatedGpu(!!parsed.forceDedicatedGpu)
+            setEnableBackgroundProxies(!!parsed.enableBackgroundProxies)
             setOriginalGpuState(!!parsed.forceDedicatedGpu)
           } catch (e) {
             console.error('Failed to parse preferences', e)
@@ -89,7 +101,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
   const handleSavePerformance = (e: React.FormEvent): void => {
     e.preventDefault()
     if (window.api?.writeSettings) {
-      window.api.writeSettings('preferences', JSON.stringify({ forceDedicatedGpu }))
+      window.api.writeSettings(
+        'preferences',
+        JSON.stringify({ forceDedicatedGpu, enableBackgroundProxies })
+      )
       setOriginalGpuState(forceDedicatedGpu)
     }
   }
@@ -114,6 +129,12 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
           <div className="settings-sidebar">
             <div className="settingsmodal-style-6">
               <button
+                onClick={() => setActiveTab('general')}
+                className={`settingsmodal-style-8 tab-btn ${activeTab === 'general' ? 'active' : ''}`}
+              >
+                <Save size={16} /> General
+              </button>
+              <button
                 onClick={() => setActiveTab('profile')}
                 className={`settingsmodal-style-7 tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
               >
@@ -124,6 +145,12 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
                 className={`settingsmodal-style-8 tab-btn ${activeTab === 'keys' ? 'active' : ''}`}
               >
                 <Key size={16} /> AI Integrations
+              </button>
+              <button
+                onClick={() => setActiveTab('fonts')}
+                className={`settingsmodal-style-8 tab-btn ${activeTab === 'fonts' ? 'active' : ''}`}
+              >
+                <Type size={16} /> Fonts
               </button>
               <button
                 onClick={() => setActiveTab('performance')}
@@ -137,6 +164,45 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
           {/* Content Area */}
           <div className="settings-content">
             <div className="settingsmodal-style-9">
+              {activeTab === 'general' && (
+                <div className="settingsmodal-style-10">
+                  <div className="settingsmodal-style-3 settingsmodal-style-creator-header">
+                    <h2 className="settingsmodal-style-4 settingsmodal-style-creator-title">
+                      File Management
+                    </h2>
+                  </div>
+                  <p className="settingsmodal-style-22 settingsmodal-style-creator-desc">
+                    Configure where Express Reels downloads AI-generated assets and fetched media.
+                  </p>
+
+                  <div className="settingsmodal-style-11">
+                    <label className="settingsmodal-style-12">Download Directory</label>
+                    <div className="settings-download-input-container">
+                      <input
+                        type="text"
+                        title="Download Directory"
+                        value={downloadDirectory || ''}
+                        readOnly
+                        placeholder="Default: Documents/ExpressReels"
+                        className="settingsmodal-style-13 settings-download-input"
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (window.api && window.api.pickDirectory) {
+                            const dir = await window.api.pickDirectory()
+                            if (dir) setDownloadDirectory(dir)
+                          }
+                        }}
+                        className="settings-download-button"
+                      >
+                        Browse
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {activeTab === 'profile' && (
                 <form onSubmit={handleSaveProfile} className="settingsmodal-style-10">
                   <div className="settingsmodal-style-11">
@@ -491,6 +557,23 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
                     </label>
                   </div>
 
+                  <div className="settingsmodal-style-64 settingsmodal-style-proxy-container">
+                    <label className="settingsmodal-style-65">
+                      <input
+                        type="checkbox"
+                        checked={enableBackgroundProxies}
+                        onChange={(e) => setEnableBackgroundProxies(e.target.checked)}
+                        className="settingsmodal-style-66"
+                      />
+                      Enable Background Proxy Generation
+                    </label>
+                    <p className="settingsmodal-style-22 settingsmodal-style-proxy-desc">
+                      Automatically generate lightweight 480p proxies for imported videos. This
+                      improves timeline playback performance on older GPUs, but uses heavy CPU
+                      encoding during import.
+                    </p>
+                  </div>
+
                   {gpuInfo && gpuInfo.gpuDevice && gpuInfo.gpuDevice.length > 0 && (
                     <div className="settingsmodal-style-68">
                       <strong className="settingsmodal-style-69">Active Hardware detected:</strong>
@@ -521,6 +604,112 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
                     <Save size={16} /> Save Performance Settings
                   </button>
                 </form>
+              )}
+
+              {activeTab === 'fonts' && (
+                <div className="settingsmodal-style-21">
+                  <div className="settingsmodal-style-3 settingsmodal-style-creator-header">
+                    <h2 className="settingsmodal-style-4 settingsmodal-style-creator-title">
+                      Custom Fonts
+                    </h2>
+                  </div>
+                  <p className="settingsmodal-style-22 settingsmodal-style-creator-desc">
+                    Import custom .ttf or .otf fonts to use them in your Express Reels text layers.
+                  </p>
+
+                  <div className="settingsmodal-style-11">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const api = (
+                          window as unknown as {
+                            api?: {
+                              pickFile?: (options: {
+                                name: string
+                                extensions: string[]
+                              }) => Promise<string | undefined>
+                            }
+                          }
+                        ).api
+                        if (api && api.pickFile) {
+                          const file = await api.pickFile({
+                            name: 'Fonts',
+                            extensions: ['ttf', 'otf']
+                          })
+                          if (file) {
+                            // Extract filename without extension
+                            const filename = file.split('\\').pop()?.split('/').pop() || 'Unknown'
+                            const name = filename.replace(/\.(ttf|otf)$/i, '')
+                            useProjectStore.getState().addCustomFont(name, file)
+                          }
+                        }
+                      }}
+                      className="settingsmodal-style-20 settingsmodal-margin-bottom"
+                    >
+                      <Type size={16} /> Import Custom Font
+                    </button>
+                  </div>
+
+                  {useProjectStore.getState().customFonts.length > 0 ? (
+                    <div className="settingsmodal-style-68">
+                      {useProjectStore.getState().customFonts.map((font, i) => (
+                        <div key={i} className="settingsmodal-style-70 settingsmodal-flex-between">
+                          <span>
+                            <strong>{font.name}</strong>
+                            <br />
+                            <small className="settingsmodal-style-22 settingsmodal-break-all">
+                              {font.path}
+                            </small>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => useProjectStore.getState().removeCustomFont(font.name)}
+                            className="settingsmodal-style-5"
+                            title="Remove Font"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="settingsmodal-style-22 settingsmodal-italic">
+                      No custom fonts imported.
+                    </div>
+                  )}
+
+                  <div className="settingsmodal-style-3 settingsmodal-style-creator-header settingsmodal-margin-top-large">
+                    <h2 className="settingsmodal-style-4 settingsmodal-style-creator-title">
+                      Standard Fonts
+                    </h2>
+                  </div>
+                  <p className="settingsmodal-style-22 settingsmodal-style-creator-desc">
+                    These web-safe standard fonts are always available.
+                  </p>
+                  <div className="settingsmodal-style-68">
+                    {[
+                      'Arial',
+                      'Verdana',
+                      'Tahoma',
+                      'Trebuchet MS',
+                      'Times New Roman',
+                      'Georgia',
+                      'Garamond',
+                      'Courier New',
+                      'Brush Script MT',
+                      'Impact',
+                      'Comic Sans MS'
+                    ].map((font, i) => {
+                      const className = `std-font-${font.replace(/\\s+/g, '-')}`
+                      return (
+                        <div key={i} className="settingsmodal-style-70">
+                          <style>{`.${className} { font-family: "${font}"; }`}</style>
+                          <span className={className}>{font}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               )}
             </div>
           </div>
