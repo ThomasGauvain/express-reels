@@ -186,10 +186,18 @@
 }
 
 .titlebar-storyboard-btn {
-  background: var(--color-primary);
+  background: #7c5cfc;
+  color: #ffffff;
   margin-right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.titlebar-storyboard-btn-icon {
-  margin-right: 6px;
+.titlebar-storyboard-btn:hover {
+  background: #6d4ef0;
+}
+
+.titlebar-storyboard-icon {
+  flex-shrink: 0;
 }

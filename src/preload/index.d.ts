@@ -20,6 +20,7 @@ declare global {
       getMediaMetadata: (filePath: string) => Promise<{ artist: string } | null>
       savePhotoBatch: (photos: { name: string; dataUrl: string }[]) => Promise<string[] | null>
       generateProxy: (filePath: string) => Promise<string | null>
+      tusUpload: (filePath: string, uploadUrl: string) => Promise<boolean>
     }
   }
 }

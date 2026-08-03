@@ -18,7 +18,8 @@ import { ExportEngine } from './ExportEngine'
 import { startSocialMediaPost, continueSocialMediaPost, SocialPostState } from '../lib/gemini'
 
 export function ExportModal({ onClose }: { onClose: () => void }): React.ReactElement {
-  const { exportSettings, setExportSettings, appMode, mediaLibrary } = useProjectStore()
+  const { exportSettings, setExportSettings, appMode, mediaLibrary, setStreamId } =
+    useProjectStore()
   const [isExporting, setIsExporting] = useState(false)
   const [progress, setProgress] = useState(0)
   const progressBarRef = useRef<HTMLDivElement>(null)
@@ -35,6 +36,7 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
   const [exportedFilePath, setExportedFilePath] = useState<string | null>(null)
   const [chatInput, setChatInput] = useState('')
   const [watermark, setWatermark] = useState('')
+  const [isUploadingToArtisteers, setIsUploadingToArtisteers] = useState(false)
 
   // Dragging state
   const modalRef = useRef<HTMLDivElement>(null)
@@ -54,6 +56,85 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
       progressBarRef.current.style.width = `${progress}%`
     }
   }, [progress])
+
+  const handleUploadToArtisteers = async (): Promise<void> => {
+    if (!exportedFilePath) return
+    setIsUploadingToArtisteers(true)
+    try {
+      const artisteersKey = useProjectStore.getState().aiKeys?.artisteers
+      if (!artisteersKey) {
+        alert('Please configure your Artisteers License Key in Settings before uploading.')
+        return
+      }
+
+      // Get Upload URL from Artisteers
+      const res = await fetch('http://localhost:3000/api/desktop/upload', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${artisteersKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ maxDurationSeconds: 3600 })
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Failed to request upload URL')
+      }
+
+      const { uploadUrl, streamId } = await res.json()
+
+      // Execute TUS upload in Node main process
+      if (window.api?.tusUpload) {
+        await window.api.tusUpload(exportedFilePath, uploadUrl)
+      } else {
+        throw new Error('tusUpload API not exposed to renderer')
+      }
+
+      // Save streamId to store
+      setStreamId(streamId)
+
+      // Open Artisteers Compose route in default browser
+      const composeUrl = `http://localhost:3000/compose?streamId=${streamId}&caption=${encodeURIComponent(editedPost)}`
+      if (window.api?.openExternal) {
+        await window.api.openExternal(composeUrl)
+      }
+
+      onClose()
+    } catch (err: any) {
+      console.error('Failed to upload to Artisteers', err)
+      alert(`Upload failed: ${err.message}`)
+    } finally {
+      setIsUploadingToArtisteers(false)
+    }
+  }
+
+  const handleSocialPublish = async (targetPlatform: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(editedPost)
+      let url = ''
+      switch (targetPlatform.toLowerCase()) {
+        case 'tiktok':
+          url = 'https://www.tiktok.com/upload'
+          break
+        case 'instagram':
+          url = 'https://www.instagram.com'
+          break // IG doesn't have a direct desktop web upload URL via link but opening the home page works
+        case 'x':
+        case 'twitter':
+          url = 'https://twitter.com/compose/tweet'
+          break
+        default:
+          return
+      }
+      if (window.api?.openExternal) {
+        await window.api.openExternal(url)
+      }
+    } catch (err) {
+      console.error('Failed to copy to clipboard', err)
+      alert('Failed to copy caption to clipboard')
+    }
+  }
 
   const handleExport = async (): Promise<void> => {
     try {
@@ -381,6 +462,81 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
                     >
                       Open Output Folder
                     </button>
+                    <button
+                      className="settings-input export-complete-btn upload-artisteers-btn"
+                      onClick={handleUploadToArtisteers}
+                      disabled={isUploadingToArtisteers}
+                      style={{ marginTop: '10px', background: 'var(--color-accent)' }}
+                    >
+                      {isUploadingToArtisteers ? 'Uploading...' : '🚀 Upload to Artisteers'}
+                    </button>
+
+                    {generatePost && (
+                      <div
+                        style={{
+                          marginTop: '15px',
+                          width: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px'
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            color: 'var(--color-text-muted)',
+                            textAlign: 'center'
+                          }}
+                        >
+                          Social Publish (Copies caption to clipboard)
+                        </div>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr 1fr',
+                            gap: '8px'
+                          }}
+                        >
+                          <button
+                            className="settings-input export-complete-btn"
+                            style={{
+                              background: '#000000',
+                              color: '#fff',
+                              fontSize: '11px',
+                              padding: '8px'
+                            }}
+                            onClick={() => handleSocialPublish('tiktok')}
+                          >
+                            TikTok
+                          </button>
+                          <button
+                            className="settings-input export-complete-btn"
+                            style={{
+                              background: '#E1306C',
+                              color: '#fff',
+                              fontSize: '11px',
+                              padding: '8px'
+                            }}
+                            onClick={() => handleSocialPublish('instagram')}
+                          >
+                            Instagram
+                          </button>
+                          <button
+                            className="settings-input export-complete-btn"
+                            style={{
+                              background: '#1DA1F2',
+                              color: '#fff',
+                              fontSize: '11px',
+                              padding: '8px'
+                            }}
+                            onClick={() => handleSocialPublish('twitter')}
+                          >
+                            X (Twitter)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="exportmodal-style-7">
                       You can safely close this window, or stick around to refine your post on the
                       right.
@@ -524,6 +680,14 @@ export function ExportModal({ onClose }: { onClose: () => void }): React.ReactEl
                       }
                     >
                       Open Output Folder
+                    </button>
+                    <button
+                      className="settings-input export-complete-btn upload-artisteers-btn"
+                      onClick={handleUploadToArtisteers}
+                      disabled={isUploadingToArtisteers}
+                      style={{ marginTop: '10px', background: 'var(--color-accent)' }}
+                    >
+                      {isUploadingToArtisteers ? 'Uploading...' : '🚀 Upload to Artisteers'}
                     </button>
                   </div>
                 ) : (

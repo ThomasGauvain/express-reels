@@ -7,6 +7,7 @@ import { exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import ffmpegPath from 'ffmpeg-static'
 import exifr from 'exifr'
+import * as tus from 'tus-js-client'
 
 const execAsync = promisify(exec)
 
@@ -390,6 +391,46 @@ app.whenReady().then(() => {
   ipcMain.handle('debug:log', async (_, data: string) => {
     fs.writeFileSync(join(app.getPath('userData'), 'debug-export.json'), data)
     return true
+  })
+
+  ipcMain.handle('system:tus-upload', async (_, filePath: string, uploadUrl: string) => {
+    return new Promise((resolve, reject) => {
+      try {
+        if (!fs.existsSync(filePath)) {
+          return reject(new Error('File not found'))
+        }
+        
+        const fileStream = fs.createReadStream(filePath)
+        const size = fs.statSync(filePath).size
+
+        const upload = new tus.Upload(fileStream, {
+          uploadUrl,
+          chunkSize: 50 * 1024 * 1024, // 50MB chunks
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          metadata: {
+            filename: 'express-reels-export.mp4',
+            filetype: 'video/mp4'
+          },
+          uploadSize: size,
+          onError: function(error) {
+            console.error('TUS Upload failed:', error)
+            reject(error)
+          },
+          onProgress: function(bytesUploaded, bytesTotal) {
+            const percentage = ((bytesUploaded / bytesTotal) * 100).toFixed(2)
+            console.log(bytesUploaded, bytesTotal, percentage + '%')
+          },
+          onSuccess: function() {
+            console.log('TUS Upload completed')
+            resolve(true)
+          }
+        })
+        
+        upload.start()
+      } catch (err) {
+        reject(err)
+      }
+    })
   })
 
   ipcMain.handle('system:decode-audio-ffmpeg', async (_, filePath: string) => {

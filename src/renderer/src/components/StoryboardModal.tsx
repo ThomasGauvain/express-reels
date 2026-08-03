@@ -368,7 +368,7 @@ Example: {"commands":[{"action":"FETCH_ASSET", "type":"audio", "query":"explosio
         if (rawResponse.functionCalls && rawResponse.functionCalls.length > 0) {
           for (const call of rawResponse.functionCalls) {
             if (call.name === 'execute_timeline_commands') {
-              const parsed = call.args as any
+              const parsed = call.args as Record<string, unknown>
               if (parsed.commands && Array.isArray(parsed.commands)) {
                 for (const cmd of parsed.commands) {
                   if (cmd.action === 'FETCH_ASSET') {
@@ -605,32 +605,66 @@ Example: {"commands":[{"action":"FETCH_ASSET", "type":"audio", "query":"explosio
         false,
         customMedia,
         undefined,
-        copilotMessages
+        copilotMessages,
+        true // disableTools: storyboard needs plain JSON text, not function calls
       )
       if (!rawResponse) throw new Error('No response')
 
       console.log('Raw Gemini response:', rawResponse)
       const resText = rawResponse.text || ''
-      const match = resText.match(/```json\s*([\s\S]*?)\s*```/) || resText.match(/\{[\s\S]*\}/)
-      if (!match) throw new Error('Failed to parse JSON')
 
-      const blueprint = JSON.parse(match[0].replace(/```json|```/g, ''))
+      // Robust JSON extractor — handles code blocks, raw objects, JS comments, TS union types
+      const sanitizeJson = (raw: string): string => {
+        return raw
+          .replace(/\/\/[^\n]*/g, '') // strip // line comments
+          .replace(/\/\*[\s\S]*?\*\//g, '') // strip /* block comments */
+          .replace(/"([^"]+)"\s*\|\s*"[^"]*"(?:\s*\|\s*"[^"]*")*/g, '"$1"') // strip TS union types in values
+          .trim()
+      }
+
+      let jsonStr = ''
+      const codeBlockMatch = resText.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+      if (codeBlockMatch) {
+        jsonStr = codeBlockMatch[1]
+      } else {
+        // Find the outermost { } block
+        const start = resText.indexOf('{')
+        const end = resText.lastIndexOf('}')
+        if (start !== -1 && end > start) {
+          jsonStr = resText.slice(start, end + 1)
+        }
+      }
+
+      if (!jsonStr) throw new Error('Failed to parse JSON: no JSON block found in response')
+
+      let blueprint: Record<string, unknown>
+      try {
+        blueprint = JSON.parse(sanitizeJson(jsonStr))
+      } catch (parseErr) {
+        console.error('JSON parse failed. Raw JSON string:', jsonStr)
+        throw new Error(
+          `Failed to parse JSON: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`
+        )
+      }
       console.log('Parsed Storyboard Blueprint:', blueprint)
 
-      let finalDescription = blueprint.sceneDescription || 'No description provided.'
-      if (blueprint.imageAnalysis) {
-        finalDescription = `**AI Visual Discovery:**\n${blueprint.imageAnalysis}\n\n**Determined Story:**\n${finalDescription}`
+      const sceneDesc = String(blueprint.sceneDescription || 'No description provided.')
+      const imageAnalysis = blueprint.imageAnalysis ? String(blueprint.imageAnalysis) : null
+      let finalDescription = sceneDesc
+      if (imageAnalysis) {
+        finalDescription = `**AI Visual Discovery:**\n${imageAnalysis}\n\n**Determined Story:**\n${sceneDesc}`
       }
       setStoryboardScene(finalDescription)
 
+      type AssetNeededItem = {
+        id?: string
+        type: 'audio' | 'video' | 'image'
+        description: string
+        sourceHint?: string
+      }
+      const assetsNeeded = (blueprint.assetsNeeded as AssetNeededItem[] | undefined) || []
       const checklist = await Promise.all(
-        (blueprint.assetsNeeded || []).map(
-          async (req: {
-            id?: string
-            type: 'audio' | 'video' | 'image'
-            description: string
-            sourceHint?: string
-          }) => {
+        assetsNeeded.map(async (req) => {
             let options: StoryboardAssetOption[] = []
             if (req.sourceHint === 'freesound') {
               options = await fetchFreesoundOptions(req.description, aiKeys.freesound || '')
@@ -671,6 +705,7 @@ Example: {"commands":[{"action":"FETCH_ASSET", "type":"audio", "query":"explosio
           x: Number(n.x) || 0,
           y: Number(n.y) || 0,
           zoom: Number(n.zoom) || 1,
+          timeSeconds: Number(n.timeSeconds) || i * 2,
           description: typeof n.description === 'string' ? n.description : `Point ${i + 1}`
         }))
         setPlannerNodes(newNodes)

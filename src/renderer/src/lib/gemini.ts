@@ -62,7 +62,8 @@ export async function sendCopilotMessage(
   attachContext: boolean,
   customMedia?: { mimeType: string; data: string }[],
   systemPrompt?: string,
-  chatHistory?: { role: 'user' | 'assistant'; content: string }[]
+  chatHistory?: { role: 'user' | 'assistant'; content: string }[],
+  disableTools?: boolean
 ): Promise<GenerateContentResponse | undefined> {
   const ai = getAiClient()
 
@@ -194,7 +195,7 @@ If the user asks you to add an effect, music, or a keyframe to the timeline, cal
     model: 'gemini-3.5-flash',
     contents,
     config: {
-      tools: [executeTimelineCommandsTool],
+      tools: disableTools ? [] : [executeTimelineCommandsTool],
       systemInstruction:
         "You are an expert video editing assistant embedded inside a professional desktop app called Express Reels. Be concise, helpful, and reference the visual context of the user's timeline when it is provided. If asked to add effects or fetch assets, use the execute_timeline_commands tool."
     }

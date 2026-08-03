@@ -68,6 +68,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
   )
 
   // API Key State
+  const [artisteersKey, setArtisteersKey] = useState(aiKeys?.artisteers || '')
   const [geminiKey, setGeminiKey] = useState(aiKeys?.gemini || '')
   const [geminiTier, setGeminiTier] = useState<'free' | 'paid'>(aiKeys?.geminiTier || 'free')
   const [claudeKey, setClaudeKey] = useState(aiKeys?.claude || '')
@@ -87,6 +88,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
   const handleSaveKeys = (e: React.FormEvent): void => {
     e.preventDefault()
     setAiKeys({
+      artisteers: artisteersKey,
       gemini: geminiKey,
       geminiTier: geminiTier,
       claude: claudeKey,
@@ -349,6 +351,18 @@ export function SettingsModal({ onClose }: { onClose: () => void }): React.React
                     Add your API keys to enable the AI Copilot features. Keys are stored locally on
                     your machine and never sent to our servers.
                   </p>
+
+                  <div className="settingsmodal-style-23">
+                    <label className="settingsmodal-style-33" style={{ color: 'var(--color-accent)' }}>Artisteers License Key (For Cloud Uploads)</label>
+                    <input
+                      type="password"
+                      title="Artisteers License Key"
+                      placeholder="Paste your license key from Artisteers Dashboard..."
+                      value={artisteersKey}
+                      onChange={(e) => setArtisteersKey(e.target.value)}
+                      className="settingsmodal-style-34"
+                    />
+                  </div>
 
                   <div className="settingsmodal-style-23">
                     <div className="settingsmodal-style-24">

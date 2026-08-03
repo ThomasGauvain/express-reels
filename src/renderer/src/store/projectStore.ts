@@ -186,10 +186,12 @@ interface ProjectState {
   isKenBurnsLocked: boolean
 
   creatorProfile: CreatorProfile
+  streamId: string | null
 
   // Auth & Settings State
   currentUser: { id: string; name: string; email: string; password?: string } | null
   aiKeys: {
+    artisteers?: string
     gemini?: string
     geminiTier?: 'free' | 'paid'
     claude?: string
@@ -235,12 +237,14 @@ interface ProjectState {
   // Project Actions
   newProject: () => void
   updateCreatorProfile: (profile: Partial<CreatorProfile>) => void
+  setStreamId: (id: string | null) => void
   loadProject: (stateData: Partial<ProjectState>) => void
 
   // Auth & Settings Actions
   login: (email: string, name: string, password?: string) => void
   logout: () => void
   setAiKeys: (keys: {
+    artisteers?: string
     gemini?: string
     geminiTier?: 'free' | 'paid'
     claude?: string
@@ -374,6 +378,7 @@ export const useProjectStore = create<ProjectState>()(
           linkedin: ''
         }
       },
+      streamId: null,
 
       currentUser: null,
       aiKeys: { geminiTier: 'free' },
@@ -426,6 +431,8 @@ export const useProjectStore = create<ProjectState>()(
           creatorProfile: { ...state.creatorProfile, ...profile }
         }))
       },
+
+      setStreamId: (id: string | null) => set({ streamId: id }),
 
       saveHistory: (): void => {
         set((state) => {

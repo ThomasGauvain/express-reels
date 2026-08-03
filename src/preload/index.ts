@@ -20,7 +20,8 @@ const api = {
   getMediaMetadata: (filePath: string) => ipcRenderer.invoke('media:get-metadata', filePath),
   savePhotoBatch: (photos: { name: string; dataUrl: string }[]) =>
     ipcRenderer.invoke('export-photo-batch', photos),
-  generateProxy: (filePath: string) => ipcRenderer.invoke('media:generate-proxy', filePath)
+  generateProxy: (filePath: string) => ipcRenderer.invoke('media:generate-proxy', filePath),
+  tusUpload: (filePath: string, uploadUrl: string) => ipcRenderer.invoke('system:tus-upload', filePath, uploadUrl)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
